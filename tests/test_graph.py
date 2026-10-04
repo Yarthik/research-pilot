@@ -43,6 +43,10 @@ def test_self_correcting_retry(loaded_retriever, fake_llm):
     assert second_retrieve["queries"] == ["LoRA GPU memory trainable parameters"]
     # the final grade is skipped (no rounds left), so the LLM was asked to grade only once
     assert sum(1 for name, _ in fake_llm.calls if name == "ContextGrade") == 1
+    # ...and its trace step says so instead of claiming the evidence was judged sufficient
+    first_grade, final_grade = result["trace"][2], result["trace"][4]
+    assert first_grade["sufficient"] is False and "skipped" not in first_grade
+    assert final_grade["skipped"] is True and final_grade["sufficient"] is None
 
 
 def test_max_rounds_one_disables_retry(loaded_retriever, fake_llm):
@@ -50,6 +54,8 @@ def test_max_rounds_one_disables_retry(loaded_retriever, fake_llm):
     result = ask("How does LoRA work?", max_rounds=1)
     assert [s["step"] for s in result["trace"]] == ["plan", "retrieve", "grade", "generate"]
     assert not any(name == "ContextGrade" for name, _ in fake_llm.calls)
+    assert result["trace"][2]["skipped"] is True
+    assert result["answer"]  # routing unchanged: a skipped grade still goes on to answer
 
 
 def test_mode_override_reaches_retrieval(loaded_retriever, fake_llm):

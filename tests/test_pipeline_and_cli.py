@@ -52,6 +52,17 @@ def test_cli_ingest_sources_delete(retriever, tmp_path, capsys):
     assert cli.main(["delete", "zebras.txt"]) == 1
 
 
+def test_cli_trace_marks_skipped_grade(loaded_retriever, fake_llm, capsys):
+    fake_llm.responses = {
+        "ResearchPlan": [{"sub_queries": ["LoRA rank decomposition"], "needs_web": False}],
+        "Answer": [{"answer": "LoRA injects rank decomposition matrices [1].", "cited_sources": [1]}],
+    }
+    assert cli.main(["ask", "How does LoRA work?", "--rounds", "1", "--trace"]) == 0
+    out = capsys.readouterr().out
+    assert "grade: grader skipped (no rounds left)" in out
+    assert "sufficient=" not in out
+
+
 def test_cli_reports_errors_cleanly(retriever, capsys):
     assert cli.main(["ingest", "/no/such/file.pdf"]) == 1
     assert "FAIL" in capsys.readouterr().out

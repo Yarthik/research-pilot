@@ -139,14 +139,13 @@ def _max_rounds(state: ResearchState) -> int:
 def grade(state: ResearchState) -> dict:
     start = time.perf_counter()
     evidence = state.get("evidence") or []
-    sufficient, missing, new_queries, error = False, "", [], None
+    sufficient, missing, new_queries, error, skipped = False, "", [], None, False
 
     if not evidence:
         missing = "nothing relevant was retrieved"
     elif state.get("round", 0) >= _max_rounds(state):
         # No retries left: skip the LLM call and go straight to answering.
-        sufficient = True
-        missing = "skipped: no retrieval rounds left"
+        sufficient, skipped = True, True
     else:
         try:
             result = llm_module.structured(ContextGrade).invoke(
@@ -166,11 +165,14 @@ def grade(state: ResearchState) -> dict:
 
     step = {
         "step": "grade",
-        "sufficient": sufficient,
+        # A skipped grade made no verdict: None in the trace, while the state still routes to answering.
+        "sufficient": None if skipped else sufficient,
         "missing": missing,
         "new_queries": new_queries,
         "seconds": _elapsed(start),
     }
+    if skipped:
+        step["skipped"] = True
     if error:
         step["error"] = error
     update: dict = {"sufficient": sufficient, "new_queries": new_queries, "trace": [step]}

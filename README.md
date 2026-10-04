@@ -119,7 +119,14 @@ The `evals/` harness measures the system rather than eyeballing it. The labelled
 **Retrieval** (no LLM calls, free): for each question, a retrieved chunk counts as relevant if it comes from the expected paper and contains one of the labelled key phrases. Reports hit rate@5, MRR@5 and, for multi-document questions, how many of the needed papers were found.
 
 <!-- EVAL:RETRIEVAL:START -->
-_Not run yet. Run `python -m evals retrieval --update-readme` to fill in this table._
+| Retrieval mode | Hit rate@5 | MRR@5 | Multi-doc source recall@5 | p50 latency |
+| --- | ---: | ---: | ---: | ---: |
+| Vector only | 92.0% | 0.708 | 62.5% | 10 ms |
+| BM25 only | 88.0% | 0.803 | 75.0% | 1 ms |
+| Hybrid (RRF) | 96.0% | 0.831 | 75.0% | 11 ms |
+| Hybrid + rerank | 96.0% | 0.685 | 87.5% | 1050 ms |
+
+_25 labelled questions · embeddings `BAAI/bge-small-en-v1.5` · reranker `Xenova/ms-marco-MiniLM-L-6-v2` · chunks 1000/150 chars · run 2026-10-04 18:04 UTC_
 <!-- EVAL:RETRIEVAL:END -->
 
 **Answers** (uses the LLM): runs the full agent and scores each answer with an LLM judge for **correctness** against a reference answer (correct = 1, partially = 0.5), **faithfulness** (share of the answer's claims supported by the passages it cites), citation coverage, whether it **abstains** on unanswerable questions, and false abstentions. The ablation compares one retrieval round against the self-correcting two-round loop.

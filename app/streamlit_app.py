@@ -61,6 +61,8 @@ def describe_step(event: dict) -> str:
         found = f"{event.get('new_chunks', 0)} new chunk(s){web}"
         return f"Round {event.get('round')}: {found}, {event.get('evidence', 0)} in context{seconds}"
     if step == "grade":
+        if event.get("skipped"):
+            return f"Grader skipped (no rounds left){seconds}"
         if event.get("sufficient"):
             return f"Context is sufficient{seconds}"
         if event.get("new_queries"):

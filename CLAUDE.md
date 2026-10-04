@@ -13,10 +13,10 @@ so these parts have NOT yet run against the real libraries and need verifying fi
 - The FastAPI app against a live server (`/docs`, `/ask/stream`, uploads); its tests pass with fakes
 - The Streamlit UI (`app/streamlit_app.py`), never rendered yet
 - The Dockerfile and docker-compose, never built yet
-- Key phrases in `evals/dataset.jsonl`, written from memory of the papers and not checked against the PDFs
+- The answer eval (`python -m evals answers`), never run
 
 Already verified: pure-Python logic (chunking, BM25, RRF, citations, evidence selection, agent
-nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 114 fast tests
+nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 115 fast tests
 (`pytest -m "not slow"`) and 1 slow test (`pytest -m slow`) pass, `ruff` is clean, and
 `requirements.txt` is pinned to the versions that ran. Verified against the real libraries in
 Stage 1: ChromaDB calls in `retrieval/vector_store.py`, FastEmbed embeddings and reranker (slow
@@ -29,6 +29,12 @@ no longer served): the five sample papers ingest with correct titles; `ask` retu
 from the right papers, retries when round 1 misses part of a question, and says when the documents
 don't cover a question. PDF text is NFKC-normalised (ligatures) and lines from fonts without a
 Unicode map are dropped; gpt-oss's `【1†L1-L4】` citation markers are rewritten to `[1]`.
+
+Stage 3: the retrieval eval runs and its table is in the README. Every answerable question's key
+phrases match real chunk text (`l1`/`m2` gained "decomposition matrices", which a chunk boundary
+split from "rank"). `l5` is never retrieved: a genuine failure (BM25 has no stemming, so
+"initialized" misses "initialization", and pypdf glues math letters to words, e.g. "forB"). The
+cross-encoder lowers MRR versus plain hybrid; see the Stage 3 commit message for the analysis.
 
 ## Commands
 

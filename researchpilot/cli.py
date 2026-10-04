@@ -69,7 +69,10 @@ def cmd_ask(args) -> int:
     if args.trace:
         print("\nTrace:")
         for step in result["trace"]:
-            details = ", ".join(f"{k}={v}" for k, v in step.items() if k != "step")
+            if step.get("skipped"):
+                details = f"grader skipped (no rounds left), seconds={step.get('seconds')}"
+            else:
+                details = ", ".join(f"{k}={v}" for k, v in step.items() if k != "step")
             print(f"  {step['step']}: {details}")
     print(f"\nTotal time: {result['seconds']}s")
     return 0

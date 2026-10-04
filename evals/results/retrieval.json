@@ -1,0 +1,954 @@
+{
+  "meta": {
+    "date": "2026-10-04 18:04 UTC",
+    "llm": "groq/openai/gpt-oss-120b",
+    "embedding_model": "BAAI/bge-small-en-v1.5",
+    "reranker_model": "Xenova/ms-marco-MiniLM-L-6-v2",
+    "chunk_size": 1000,
+    "chunk_overlap": 150,
+    "k": 5
+  },
+  "summary": {
+    "vector": {
+      "questions": 25,
+      "hit_rate@5": 0.92,
+      "mrr@5": 0.708,
+      "multi_doc_source_recall@5": 0.625,
+      "latency_ms_p50": 9.6
+    },
+    "bm25": {
+      "questions": 25,
+      "hit_rate@5": 0.88,
+      "mrr@5": 0.8033,
+      "multi_doc_source_recall@5": 0.75,
+      "latency_ms_p50": 0.8
+    },
+    "hybrid": {
+      "questions": 25,
+      "hit_rate@5": 0.96,
+      "mrr@5": 0.8313,
+      "multi_doc_source_recall@5": 0.75,
+      "latency_ms_p50": 11.0
+    },
+    "hybrid_rerank": {
+      "questions": 25,
+      "hit_rate@5": 0.96,
+      "mrr@5": 0.6847,
+      "multi_doc_source_recall@5": 0.875,
+      "latency_ms_p50": 1049.7
+    }
+  },
+  "never_found": [
+    "l5"
+  ],
+  "details": {
+    "vector": [
+      {
+        "id": "t1",
+        "type": "single",
+        "latency_ms": 1324.7,
+        "hit": 1.0,
+        "reciprocal_rank": 0.3333333333333333,
+        "first_relevant_rank": 3,
+        "source_recall": 1.0
+      },
+      {
+        "id": "t2",
+        "type": "single",
+        "latency_ms": 17.6,
+        "hit": 1.0,
+        "reciprocal_rank": 0.5,
+        "first_relevant_rank": 2,
+        "source_recall": 1.0
+      },
+      {
+        "id": "t3",
+        "type": "single",
+        "latency_ms": 11.3,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "t4",
+        "type": "single",
+        "latency_ms": 20.1,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "t5",
+        "type": "single",
+        "latency_ms": 9.0,
+        "hit": 1.0,
+        "reciprocal_rank": 0.2,
+        "first_relevant_rank": 5,
+        "source_recall": 1.0
+      },
+      {
+        "id": "r1",
+        "type": "single",
+        "latency_ms": 16.3,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "r2",
+        "type": "single",
+        "latency_ms": 15.3,
+        "hit": 1.0,
+        "reciprocal_rank": 0.5,
+        "first_relevant_rank": 2,
+        "source_recall": 1.0
+      },
+      {
+        "id": "r3",
+        "type": "single",
+        "latency_ms": 8.5,
+        "hit": 1.0,
+        "reciprocal_rank": 0.5,
+        "first_relevant_rank": 2,
+        "source_recall": 1.0
+      },
+      {
+        "id": "r4",
+        "type": "single",
+        "latency_ms": 10.6,
+        "hit": 0.0,
+        "reciprocal_rank": 0.0,
+        "first_relevant_rank": null,
+        "source_recall": 0.0
+      },
+      {
+        "id": "re1",
+        "type": "single",
+        "latency_ms": 8.2,
+        "hit": 1.0,
+        "reciprocal_rank": 0.3333333333333333,
+        "first_relevant_rank": 3,
+        "source_recall": 1.0
+      },
+      {
+        "id": "re2",
+        "type": "single",
+        "latency_ms": 7.7,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "re3",
+        "type": "single",
+        "latency_ms": 9.6,
+        "hit": 1.0,
+        "reciprocal_rank": 0.5,
+        "first_relevant_rank": 2,
+        "source_recall": 1.0
+      },
+      {
+        "id": "re4",
+        "type": "single",
+        "latency_ms": 9.8,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l1",
+        "type": "single",
+        "latency_ms": 9.2,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l2",
+        "type": "single",
+        "latency_ms": 13.8,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l3",
+        "type": "single",
+        "latency_ms": 10.9,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l4",
+        "type": "single",
+        "latency_ms": 8.9,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l5",
+        "type": "single",
+        "latency_ms": 8.1,
+        "hit": 0.0,
+        "reciprocal_rank": 0.0,
+        "first_relevant_rank": null,
+        "source_recall": 0.0
+      },
+      {
+        "id": "c1",
+        "type": "single",
+        "latency_ms": 7.4,
+        "hit": 1.0,
+        "reciprocal_rank": 0.3333333333333333,
+        "first_relevant_rank": 3,
+        "source_recall": 1.0
+      },
+      {
+        "id": "c2",
+        "type": "single",
+        "latency_ms": 10.5,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "c3",
+        "type": "single",
+        "latency_ms": 8.6,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "m1",
+        "type": "multi",
+        "latency_ms": 7.7,
+        "hit": 1.0,
+        "reciprocal_rank": 0.5,
+        "first_relevant_rank": 2,
+        "source_recall": 0.5
+      },
+      {
+        "id": "m2",
+        "type": "multi",
+        "latency_ms": 9.4,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 0.5
+      },
+      {
+        "id": "m3",
+        "type": "multi",
+        "latency_ms": 8.9,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 0.5
+      },
+      {
+        "id": "m4",
+        "type": "multi",
+        "latency_ms": 10.0,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      }
+    ],
+    "bm25": [
+      {
+        "id": "t1",
+        "type": "single",
+        "latency_ms": 77.3,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "t2",
+        "type": "single",
+        "latency_ms": 1.6,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "t3",
+        "type": "single",
+        "latency_ms": 1.0,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "t4",
+        "type": "single",
+        "latency_ms": 0.9,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "t5",
+        "type": "single",
+        "latency_ms": 0.8,
+        "hit": 0.0,
+        "reciprocal_rank": 0.0,
+        "first_relevant_rank": null,
+        "source_recall": 0.0
+      },
+      {
+        "id": "r1",
+        "type": "single",
+        "latency_ms": 0.6,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "r2",
+        "type": "single",
+        "latency_ms": 0.6,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "r3",
+        "type": "single",
+        "latency_ms": 0.7,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "r4",
+        "type": "single",
+        "latency_ms": 0.7,
+        "hit": 1.0,
+        "reciprocal_rank": 0.5,
+        "first_relevant_rank": 2,
+        "source_recall": 1.0
+      },
+      {
+        "id": "re1",
+        "type": "single",
+        "latency_ms": 0.9,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "re2",
+        "type": "single",
+        "latency_ms": 0.4,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "re3",
+        "type": "single",
+        "latency_ms": 1.4,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "re4",
+        "type": "single",
+        "latency_ms": 1.9,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l1",
+        "type": "single",
+        "latency_ms": 2.8,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l2",
+        "type": "single",
+        "latency_ms": 2.5,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l3",
+        "type": "single",
+        "latency_ms": 1.4,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l4",
+        "type": "single",
+        "latency_ms": 0.8,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l5",
+        "type": "single",
+        "latency_ms": 0.5,
+        "hit": 0.0,
+        "reciprocal_rank": 0.0,
+        "first_relevant_rank": null,
+        "source_recall": 0.0
+      },
+      {
+        "id": "c1",
+        "type": "single",
+        "latency_ms": 0.4,
+        "hit": 0.0,
+        "reciprocal_rank": 0.0,
+        "first_relevant_rank": null,
+        "source_recall": 0.0
+      },
+      {
+        "id": "c2",
+        "type": "single",
+        "latency_ms": 1.4,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "c3",
+        "type": "single",
+        "latency_ms": 0.8,
+        "hit": 1.0,
+        "reciprocal_rank": 0.3333333333333333,
+        "first_relevant_rank": 3,
+        "source_recall": 1.0
+      },
+      {
+        "id": "m1",
+        "type": "multi",
+        "latency_ms": 0.6,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "m2",
+        "type": "multi",
+        "latency_ms": 1.1,
+        "hit": 1.0,
+        "reciprocal_rank": 0.25,
+        "first_relevant_rank": 4,
+        "source_recall": 0.5
+      },
+      {
+        "id": "m3",
+        "type": "multi",
+        "latency_ms": 0.7,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "m4",
+        "type": "multi",
+        "latency_ms": 0.8,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 0.5
+      }
+    ],
+    "hybrid": [
+      {
+        "id": "t1",
+        "type": "single",
+        "latency_ms": 14.1,
+        "hit": 1.0,
+        "reciprocal_rank": 0.5,
+        "first_relevant_rank": 2,
+        "source_recall": 1.0
+      },
+      {
+        "id": "t2",
+        "type": "single",
+        "latency_ms": 14.9,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "t3",
+        "type": "single",
+        "latency_ms": 12.9,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "t4",
+        "type": "single",
+        "latency_ms": 12.0,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "t5",
+        "type": "single",
+        "latency_ms": 10.0,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "r1",
+        "type": "single",
+        "latency_ms": 9.6,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "r2",
+        "type": "single",
+        "latency_ms": 13.8,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "r3",
+        "type": "single",
+        "latency_ms": 10.4,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "r4",
+        "type": "single",
+        "latency_ms": 10.3,
+        "hit": 1.0,
+        "reciprocal_rank": 0.3333333333333333,
+        "first_relevant_rank": 3,
+        "source_recall": 1.0
+      },
+      {
+        "id": "re1",
+        "type": "single",
+        "latency_ms": 9.8,
+        "hit": 1.0,
+        "reciprocal_rank": 0.5,
+        "first_relevant_rank": 2,
+        "source_recall": 1.0
+      },
+      {
+        "id": "re2",
+        "type": "single",
+        "latency_ms": 9.0,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "re3",
+        "type": "single",
+        "latency_ms": 11.7,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "re4",
+        "type": "single",
+        "latency_ms": 11.3,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l1",
+        "type": "single",
+        "latency_ms": 12.3,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l2",
+        "type": "single",
+        "latency_ms": 13.7,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l3",
+        "type": "single",
+        "latency_ms": 12.5,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l4",
+        "type": "single",
+        "latency_ms": 11.1,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l5",
+        "type": "single",
+        "latency_ms": 10.1,
+        "hit": 0.0,
+        "reciprocal_rank": 0.0,
+        "first_relevant_rank": null,
+        "source_recall": 0.0
+      },
+      {
+        "id": "c1",
+        "type": "single",
+        "latency_ms": 9.0,
+        "hit": 1.0,
+        "reciprocal_rank": 0.25,
+        "first_relevant_rank": 4,
+        "source_recall": 1.0
+      },
+      {
+        "id": "c2",
+        "type": "single",
+        "latency_ms": 13.0,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "c3",
+        "type": "single",
+        "latency_ms": 10.4,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "m1",
+        "type": "multi",
+        "latency_ms": 8.7,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "m2",
+        "type": "multi",
+        "latency_ms": 11.0,
+        "hit": 1.0,
+        "reciprocal_rank": 0.2,
+        "first_relevant_rank": 5,
+        "source_recall": 0.5
+      },
+      {
+        "id": "m3",
+        "type": "multi",
+        "latency_ms": 9.4,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "m4",
+        "type": "multi",
+        "latency_ms": 10.7,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 0.5
+      }
+    ],
+    "hybrid_rerank": [
+      {
+        "id": "t1",
+        "type": "single",
+        "latency_ms": 993.2,
+        "hit": 1.0,
+        "reciprocal_rank": 0.5,
+        "first_relevant_rank": 2,
+        "source_recall": 1.0
+      },
+      {
+        "id": "t2",
+        "type": "single",
+        "latency_ms": 1779.6,
+        "hit": 1.0,
+        "reciprocal_rank": 0.5,
+        "first_relevant_rank": 2,
+        "source_recall": 1.0
+      },
+      {
+        "id": "t3",
+        "type": "single",
+        "latency_ms": 1255.9,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "t4",
+        "type": "single",
+        "latency_ms": 1200.1,
+        "hit": 1.0,
+        "reciprocal_rank": 0.3333333333333333,
+        "first_relevant_rank": 3,
+        "source_recall": 1.0
+      },
+      {
+        "id": "t5",
+        "type": "single",
+        "latency_ms": 1248.7,
+        "hit": 1.0,
+        "reciprocal_rank": 0.25,
+        "first_relevant_rank": 4,
+        "source_recall": 1.0
+      },
+      {
+        "id": "r1",
+        "type": "single",
+        "latency_ms": 1339.5,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "r2",
+        "type": "single",
+        "latency_ms": 893.7,
+        "hit": 1.0,
+        "reciprocal_rank": 0.5,
+        "first_relevant_rank": 2,
+        "source_recall": 1.0
+      },
+      {
+        "id": "r3",
+        "type": "single",
+        "latency_ms": 853.9,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "r4",
+        "type": "single",
+        "latency_ms": 1143.3,
+        "hit": 1.0,
+        "reciprocal_rank": 0.5,
+        "first_relevant_rank": 2,
+        "source_recall": 1.0
+      },
+      {
+        "id": "re1",
+        "type": "single",
+        "latency_ms": 1049.7,
+        "hit": 1.0,
+        "reciprocal_rank": 0.3333333333333333,
+        "first_relevant_rank": 3,
+        "source_recall": 1.0
+      },
+      {
+        "id": "re2",
+        "type": "single",
+        "latency_ms": 957.6,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "re3",
+        "type": "single",
+        "latency_ms": 869.6,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "re4",
+        "type": "single",
+        "latency_ms": 1015.4,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l1",
+        "type": "single",
+        "latency_ms": 837.4,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l2",
+        "type": "single",
+        "latency_ms": 1522.7,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l3",
+        "type": "single",
+        "latency_ms": 1100.7,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l4",
+        "type": "single",
+        "latency_ms": 1710.2,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "l5",
+        "type": "single",
+        "latency_ms": 1185.1,
+        "hit": 0.0,
+        "reciprocal_rank": 0.0,
+        "first_relevant_rank": null,
+        "source_recall": 0.0
+      },
+      {
+        "id": "c1",
+        "type": "single",
+        "latency_ms": 763.4,
+        "hit": 1.0,
+        "reciprocal_rank": 0.2,
+        "first_relevant_rank": 5,
+        "source_recall": 1.0
+      },
+      {
+        "id": "c2",
+        "type": "single",
+        "latency_ms": 1518.4,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "c3",
+        "type": "single",
+        "latency_ms": 706.7,
+        "hit": 1.0,
+        "reciprocal_rank": 0.5,
+        "first_relevant_rank": 2,
+        "source_recall": 1.0
+      },
+      {
+        "id": "m1",
+        "type": "multi",
+        "latency_ms": 843.3,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      },
+      {
+        "id": "m2",
+        "type": "multi",
+        "latency_ms": 943.9,
+        "hit": 1.0,
+        "reciprocal_rank": 0.25,
+        "first_relevant_rank": 4,
+        "source_recall": 1.0
+      },
+      {
+        "id": "m3",
+        "type": "multi",
+        "latency_ms": 978.3,
+        "hit": 1.0,
+        "reciprocal_rank": 0.25,
+        "first_relevant_rank": 4,
+        "source_recall": 0.5
+      },
+      {
+        "id": "m4",
+        "type": "multi",
+        "latency_ms": 1119.7,
+        "hit": 1.0,
+        "reciprocal_rank": 1.0,
+        "first_relevant_rank": 1,
+        "source_recall": 1.0
+      }
+    ]
+  }
+}
