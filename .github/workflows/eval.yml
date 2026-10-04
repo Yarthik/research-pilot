@@ -1,0 +1,27 @@
+name: Retrieval eval
+
+# Runs the free retrieval benchmark (no LLM calls): downloads the 5 sample papers and the local
+# models, then compares vector / BM25 / hybrid / hybrid+rerank. Results are uploaded as an artifact.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+
+jobs:
+  retrieval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run retrieval eval
+        run: python -m evals retrieval
+      - name: Add results to the job summary
+        run: cat evals/results/retrieval.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: retrieval-eval
+          path: evals/results/

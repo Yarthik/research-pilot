@@ -1,0 +1,6 @@
+# One source per line: URL or local file path. Text after the source is ignored.
+https://arxiv.org/pdf/1706.03762   Attention Is All You Need
+https://arxiv.org/pdf/2005.11401   Retrieval-Augmented Generation (RAG)
+https://arxiv.org/pdf/2210.03629   ReAct
+https://arxiv.org/pdf/2106.09685   LoRA
+https://arxiv.org/pdf/2201.11903   Chain-of-Thought Prompting
