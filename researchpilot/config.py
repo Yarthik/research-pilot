@@ -35,7 +35,7 @@ class Settings(BaseModel):
     chunk_overlap: int = Field(150, ge=0)
 
     # --- Retrieval ---
-    retrieval_mode: str = "hybrid_rerank"
+    retrieval_mode: str = "hybrid"
     candidate_k: int = Field(20, ge=1)  # candidates from each retriever before fusion / reranking
     final_k: int = Field(5, ge=1)  # chunks kept per query
 

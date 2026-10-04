@@ -16,7 +16,7 @@ so these parts have NOT yet run against the real libraries and need verifying fi
 - The answer eval (`python -m evals answers`), never run
 
 Already verified: pure-Python logic (chunking, BM25, RRF, citations, evidence selection, agent
-nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 115 fast tests
+nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 116 fast tests
 (`pytest -m "not slow"`) and 1 slow test (`pytest -m slow`) pass, `ruff` is clean, and
 `requirements.txt` is pinned to the versions that ran. Verified against the real libraries in
 Stage 1: ChromaDB calls in `retrieval/vector_store.py`, FastEmbed embeddings and reranker (slow
@@ -35,6 +35,14 @@ phrases match real chunk text (`l1`/`m2` gained "decomposition matrices", which 
 split from "rank"). `l5` is never retrieved: a genuine failure (BM25 has no stemming, so
 "initialized" misses "initialization", and pypdf glues math letters to words, e.g. "forB"). The
 cross-encoder lowers MRR versus plain hybrid; see the Stage 3 commit message for the analysis.
+
+Stage 3b: default `RETRIEVAL_MODE` is now `hybrid` (best hit rate and MRR, ~11 ms); three
+rerankers (MiniLM-L-6, jina-v1-turbo, bge-reranker-base) all scored below plain RRF, so
+`hybrid_rerank` is opt-in and `RERANKER_MODEL` stays MiniLM-L-6. Snowball stemming for BM25 was
+tried and reverted (lower hybrid hit rate and MRR). Without a scorer, retrieve interleaves results
+by rank across sub-queries so evidence trimming can't drop a whole sub-query. Experiment results are
+in `evals/results/experiments/`; README "Findings" summarises them. Don't re-tune on these 25
+questions without a larger eval set.
 
 ## Commands
 

@@ -11,7 +11,7 @@
 ## Highlights
 
 - **Self-correcting LangGraph agent**: plan → retrieve → grade → (retrieve again | answer), with a full step trace streamed to the UI
-- **Hybrid retrieval**: BM25 (implemented from scratch) + dense vectors (ChromaDB), merged with Reciprocal Rank Fusion, then re-ranked by a cross-encoder
+- **Hybrid retrieval**: BM25 (implemented from scratch) + dense vectors (ChromaDB), merged with Reciprocal Rank Fusion; optional cross-encoder reranking, benchmarked against plain fusion
 - **Grounded answers**: structured output, inline citations validated against the sources, and an explicit "not in the documents" path
 - **Evaluation harness**: retrieval benchmark across four retrieval modes, and LLM-judged correctness, faithfulness, abstention and a retry ablation, written straight into this README
 - **Production shape**: FastAPI service (streaming endpoint, API-key auth, read-only mode), Streamlit UI, Docker + compose, Hugging Face Spaces deployment, GitHub Actions CI
@@ -22,7 +22,7 @@
 ```mermaid
 flowchart LR
     Q([Question]) --> P[Plan<br/>split into 1-3 sub-queries]
-    P --> R[Retrieve<br/>BM25 + vector → RRF → cross-encoder]
+    P --> R[Retrieve<br/>BM25 + vector → RRF<br/>optional cross-encoder]
     R --> G{Grade<br/>is the context enough?}
     G -- "no: rewrite queries<br/>(max 2 rounds)" --> R
     G -- yes --> A[Answer<br/>cited, structured output]
@@ -31,7 +31,7 @@ flowchart LR
 
 **Ingestion:** `PDF / URL / text → extraction (pypdf, trafilatura) → sentence-aware chunking with overlap, page numbers kept → local embeddings (bge-small) → ChromaDB + BM25 index`
 
-**Retrieval modes** (selectable per request): `vector`, `bm25`, `hybrid` (RRF), `hybrid_rerank` (default).
+**Retrieval modes** (selectable per request): `vector`, `bm25`, `hybrid` (RRF, default), `hybrid_rerank` (RRF + cross-encoder).
 
 **Serving:**
 
@@ -60,13 +60,13 @@ python -m researchpilot ingest --file data/sample_sources.txt   # 5 well-known A
 python -m researchpilot ask "How does LoRA reduce the number of trainable parameters?" --trace
 ```
 
-The first run downloads the local embedding and reranker models (about 150 MB).
+The first run downloads the local embedding model; the reranker model is downloaded only if you use `hybrid_rerank`.
 
 `--trace` prints the agent's steps. The format looks like this (values vary by question and model):
 
 ```
 plan:     queries=['ReAct prompting', 'chain-of-thought prompting'], needs_web=False
-retrieve: round=1, mode=hybrid_rerank, new_chunks=10, kept_new=10, evidence=10
+retrieve: round=1, mode=hybrid, new_chunks=10, kept_new=10, evidence=10
 grade:    sufficient=True
 generate: sources=10, cited=[1, 2, 6, 7]
 ```
@@ -124,10 +124,26 @@ The `evals/` harness measures the system rather than eyeballing it. The labelled
 | Vector only | 92.0% | 0.708 | 62.5% | 10 ms |
 | BM25 only | 88.0% | 0.803 | 75.0% | 1 ms |
 | Hybrid (RRF) | 96.0% | 0.831 | 75.0% | 11 ms |
-| Hybrid + rerank | 96.0% | 0.685 | 87.5% | 1050 ms |
+| Hybrid + rerank | 96.0% | 0.685 | 87.5% | 1010 ms |
 
-_25 labelled questions · embeddings `BAAI/bge-small-en-v1.5` · reranker `Xenova/ms-marco-MiniLM-L-6-v2` · chunks 1000/150 chars · run 2026-10-04 18:04 UTC_
+_25 labelled questions · embeddings `BAAI/bge-small-en-v1.5` · reranker `Xenova/ms-marco-MiniLM-L-6-v2` · chunks 1000/150 chars · run 2026-10-04 19:08 UTC_
 <!-- EVAL:RETRIEVAL:END -->
+
+**Findings.** With 25 questions, one question moves hit rate by 4 points, so differences of a question or two are noise.
+
+- **Fusion helps.** Vector and BM25 miss different questions: BM25 can't match "position" to "positional", and vectors blur exact terms. RRF gets the best hit rate and MRR of any setup at ~11 ms, so `hybrid` is the default.
+- **The cross-encoder hurt ranking.** The MiniLM reranker lowered MRR from 0.831 to 0.685 and added about a second per query on CPU. It tends to prefer passages that repeat the question's words over the passage that answers (for "Which optimizer trained the Transformer?" it ranked LoRA's hyperparameter table first). Its one gain was multi-doc recall: one more second paper found across the 4 multi-doc questions. Stronger rerankers didn't beat plain RRF either:
+
+  | Reranker (`hybrid_rerank`) | Hit rate@5 | MRR@5 | Multi-doc source recall@5 | p50 latency |
+  | --- | ---: | ---: | ---: | ---: |
+  | `Xenova/ms-marco-MiniLM-L-6-v2` (default) | 96.0% | 0.685 | 87.5% | 1357 ms |
+  | `jinaai/jina-reranker-v1-turbo-en` | 96.0% | 0.791 | 62.5% | 1439 ms |
+  | `BAAI/bge-reranker-base` | 92.0% | 0.763 | 75.0% | 5682 ms |
+
+- **BM25 stemming was tried and reverted.** Snowball stemming fixed word-form mismatches but cost exact-term precision: hybrid fell to 92% hit rate and 0.787 MRR.
+- **One question is missed by every setup**: how LoRA initialises A and B. The answering chunk is outranked by chunks that mention LoRA's matrices more often.
+
+Raw results are in `evals/results/experiments/`; reproduce a row with `RERANKER_MODEL=<model> python -m evals retrieval --modes hybrid_rerank`.
 
 **Answers** (uses the LLM): runs the full agent and scores each answer with an LLM judge for **correctness** against a reference answer (correct = 1, partially = 0.5), **faithfulness** (share of the answer's claims supported by the passages it cites), citation coverage, whether it **abstains** on unanswerable questions, and false abstentions. The ablation compares one retrieval round against the self-correcting two-round loop.
 
@@ -149,7 +165,7 @@ Everything is set through environment variables or `.env` (see [.env.example](.e
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `LLM_PROVIDER` / `LLM_MODEL` | `groq` / `openai/gpt-oss-120b` | Any of `groq`, `openai`, `anthropic`, `google_genai`, `ollama` |
-| `RETRIEVAL_MODE` | `hybrid_rerank` | `vector`, `bm25`, `hybrid`, `hybrid_rerank` |
+| `RETRIEVAL_MODE` | `hybrid` | `vector`, `bm25`, `hybrid`, `hybrid_rerank` |
 | `FINAL_K` / `CANDIDATE_K` | `5` / `20` | Chunks kept per query / candidates per retriever before fusion |
 | `MAX_RETRIEVAL_ROUNDS` | `2` | `1` turns off the self-correcting retry |
 | `MAX_EVIDENCE` | `15` | Chunks passed to the answer step |
@@ -164,8 +180,8 @@ Example models: OpenAI `gpt-4o-mini`, Anthropic `claude-haiku-4-5-20251001`, Oll
 ## Design decisions
 
 - **Hybrid retrieval with RRF.** Dense vectors capture meaning; BM25 catches exact terms like "RAG-Token", "GSM8K" or "10,000 times" that embeddings blur. RRF merges the two rankings using ranks only, so their incompatible score scales don't matter.
-- **Cross-encoder reranking.** The bi-encoder and BM25 cast a wide net (20 candidates each); a cross-encoder then reads each (question, passage) pair together and keeps the best 5. It's slower per pair, which is why it only sees the shortlist.
-- **Re-scoring evidence across retry rounds.** The agent can find more chunks than fit in the answer prompt. Keeping the first N would silently discard everything a retry found, so the whole pool is re-scored against the original question and the best N kept (there's a regression test for this).
+- **Cross-encoder reranking is optional, not the default.** In `hybrid_rerank`, BM25 and the bi-encoder cast a wide net (20 candidates each) and a cross-encoder reads each (question, passage) pair to keep the best 5. That is the textbook precision step, but on this corpus it lowered MRR with all three rerankers tried and cost 1–6 s per query on CPU (see Findings). Plain RRF is therefore the default, and reranking stays selectable per request; it's worth re-checking on a different corpus.
+- **Choosing evidence across retry rounds.** The agent can find more chunks than fit in the answer prompt, and keeping the first N would silently discard everything a retry found. In `hybrid_rerank` the whole pool is re-scored against the original question by the cross-encoder. In the other modes, results are interleaved by rank across sub-queries and the slots are split between earlier rounds and the newest one, so neither a retry nor a sub-query is dropped wholesale. Both behaviours have regression tests.
 - **Bounded loop.** At most two retrieval rounds, and the grader is skipped on the last round, saving an LLM call when its verdict couldn't change anything.
 - **Graceful degradation.** If a model fails structured output, each step has a fallback (raw question as the query, plain-text answer). Configuration problems such as a missing API key are the exception: they surface as a clear error instead of a degraded answer.
 - **Citations are checked, not trusted.** Citation numbers are parsed from the answer text (`[1]`, `[2][3]`, `[1, 4]`, `[2-4]`) and validated against the evidence list; invalid ones are reported in the trace and counted by the eval.

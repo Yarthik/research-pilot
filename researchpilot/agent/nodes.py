@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import time
+from itertools import zip_longest
 
 from .. import llm as llm_module
 from ..config import get_settings
@@ -94,17 +95,19 @@ def retrieve(state: ResearchState) -> dict:
     new: list[Source] = []
     added_web = 0
 
+    per_query: list[list[Source]] = []
     for query in state["sub_queries"]:
-        for chunk, _score in retriever.retrieve(query, mode=mode):
-            if chunk.id not in seen:
-                seen.add(chunk.id)
-                new.append(_chunk_to_source(chunk))
+        results = [_chunk_to_source(chunk) for chunk, _score in retriever.retrieve(query, mode=mode)]
         if state.get("needs_web"):
-            for item in web_search(query):
-                if item["id"] not in seen:
-                    seen.add(item["id"])
-                    new.append(item)
-                    added_web += 1
+            results += web_search(query)
+        per_query.append(results)
+    # Interleave by rank (each sub-query's best hit first): when there is no scorer and the pool is
+    # trimmed, the lowest-ranked hits of every sub-query go, rather than whole sub-queries.
+    for item in (item for group in zip_longest(*per_query) for item in group if item is not None):
+        if item["id"] not in seen:
+            seen.add(item["id"])
+            new.append(item)
+            added_web += item.get("origin") == "web"
 
     # Re-score the whole pool against the question so retry and web results compete fairly.
     scorer = retriever.score if mode == "hybrid_rerank" else None

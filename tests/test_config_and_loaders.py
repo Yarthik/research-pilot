@@ -8,7 +8,7 @@ from researchpilot.ingestion.loaders import LoaderError, clean_pdf_text, load_pd
 # --------------------------------------------------------------------------- config
 def test_defaults():
     s = get_settings()
-    assert s.llm_provider == "groq" and s.retrieval_mode == "hybrid_rerank"
+    assert s.llm_provider == "groq" and s.retrieval_mode == "hybrid"
     assert s.tavily_api_key is None and s.allow_ingest is True
 
 

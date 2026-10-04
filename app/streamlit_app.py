@@ -33,8 +33,8 @@ EXAMPLES = [
     "Why does the Transformer scale dot products by 1/sqrt(d_k)?",
 ]
 MODE_LABELS = {
-    "hybrid_rerank": "Hybrid + rerank (best)",
-    "hybrid": "Hybrid (BM25 + vector, RRF)",
+    "hybrid_rerank": "Hybrid + cross-encoder rerank (slower)",
+    "hybrid": "Hybrid: BM25 + vector, RRF (default)",
     "vector": "Vector only",
     "bm25": "BM25 only",
 }
@@ -141,7 +141,7 @@ with st.sidebar:
     st.caption(f"v{__version__} · LLM `{info['llm_provider']}/{info['llm_model']}` · {backend().name} mode")
 
     modes = list(RETRIEVAL_MODES[::-1])
-    default_mode = info.get("retrieval_mode", "hybrid_rerank")
+    default_mode = info.get("retrieval_mode", "hybrid")
     mode = st.selectbox(
         "Retrieval mode",
         modes,

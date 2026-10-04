@@ -27,7 +27,7 @@ def test_health(client):
     body = client.get("/health").json()
     assert body["status"] == "ok"
     assert body["chunks"] == 6
-    assert body["retrieval_mode"] == "hybrid_rerank"
+    assert body["retrieval_mode"] == "hybrid"
     assert body["ingest_enabled"] is True
 
 

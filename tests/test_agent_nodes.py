@@ -2,6 +2,7 @@
 
 from researchpilot.agent import nodes
 from researchpilot.agent.schemas import Answer
+from tests.conftest import make_chunk
 
 
 def test_plan_uses_llm_queries(fake_llm):
@@ -60,6 +61,18 @@ def test_retrieve_second_round_keeps_new_evidence(loaded_retriever, monkeypatch)
     out = nodes.retrieve(state)
     assert "lora1" in [e["id"] for e in out["evidence"]]  # the retry's best hit made it in
     assert out["trace"][0]["kept_new"] >= 1
+
+
+def test_retrieve_without_scorer_keeps_every_sub_querys_best_hits(loaded_retriever, monkeypatch):
+    # In modes without a cross-encoder, trimming must not drop whole sub-queries.
+    monkeypatch.setenv("MAX_EVIDENCE", "3")
+    from researchpilot.config import reset_settings
+
+    reset_settings()
+    ranked = {q: [(make_chunk(f"{q}{r}", f"{q} text {r}"), 1.0 / r) for r in (1, 2, 3)] for q in ("a", "b", "c")}
+    monkeypatch.setattr(loaded_retriever, "retrieve", lambda query, mode=None: ranked[query])
+    out = nodes.retrieve({"question": "q", "sub_queries": ["a", "b", "c"], "round": 0, "mode": "hybrid"})
+    assert [e["id"] for e in out["evidence"]] == ["a1", "b1", "c1"]
 
 
 def test_retrieve_adds_web_results(loaded_retriever, monkeypatch):
