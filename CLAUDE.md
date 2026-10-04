@@ -19,7 +19,9 @@ so these parts have NOT yet run against the real libraries and need verifying fi
 - Key phrases in `evals/dataset.jsonl`, written from memory of the papers and not checked against the PDFs
 
 Already verified: pure-Python logic (chunking, BM25, RRF, citations, evidence selection, agent
-nodes, CLI, metrics); 92 tests pass and `ruff` is clean.
+nodes, CLI, metrics). Stage 1 run on Python 3.12.4 (the tested version; 3.14 is untested): 110 fast
+tests (`pytest -m "not slow"`) and 1 slow test (`pytest -m slow`) pass, `ruff` is clean, and
+`requirements.txt` is pinned to the versions that ran.
 
 ## Commands
 

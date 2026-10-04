@@ -1,29 +1,29 @@
 # Agent + LLM providers
-langgraph>=0.2.40,<2
-langchain>=0.3.0,<2
-langchain-groq>=0.2
-langchain-openai>=0.2
-langchain-anthropic>=0.2
-langchain-google-genai>=2.0
-langchain-ollama>=0.2
+langgraph==1.2.12
+langchain==1.4.3
+langchain-groq==1.1.3
+langchain-openai==1.6.7
+langchain-anthropic==1.7.5
+langchain-google-genai==4.4.0
+langchain-ollama==1.1.0
 
 # Retrieval
-chromadb>=0.5.5,<2
-fastembed>=0.5,<1
-numpy>=1.26
+chromadb==1.5.9
+fastembed==0.8.1
+numpy==2.5.3
 
 # Ingestion
-pypdf>=4.2
-trafilatura>=1.9
-httpx>=0.27
+pypdf==6.19.0
+trafilatura==2.3.0
+httpx==0.28.1
 
 # Config + web search
-pydantic>=2.6,<3
-python-dotenv>=1.0
-tavily-python>=0.5
+pydantic==2.13.5
+python-dotenv==1.2.4
+tavily-python==0.8.4
 
 # Service + UI
-fastapi>=0.110
-uvicorn[standard]>=0.29
-python-multipart>=0.0.9
-streamlit>=1.36,<2
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+python-multipart==0.0.32
+streamlit==1.65.0

@@ -47,7 +47,7 @@ flowchart LR
 
 ## Quickstart
 
-Requires Python 3.11+.
+Requires Python 3.11–3.12.
 
 ```bash
 git clone https://github.com/YOUR-USERNAME/research-pilot.git
