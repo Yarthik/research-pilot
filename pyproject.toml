@@ -7,7 +7,7 @@ name = "researchpilot"
 dynamic = ["version", "dependencies"]
 description = "Agentic research assistant: hybrid retrieval, cross-encoder reranking and a self-correcting LangGraph agent with citations."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Kartik Kaushik" }]
 
@@ -29,7 +29,7 @@ markers = ["slow: downloads the local models (needs network); run with `pytest -
 
 [tool.ruff]
 line-length = 120
-target-version = "py311"
+target-version = "py312"
 extend-exclude = ["storage"]
 
 [tool.ruff.lint]

@@ -1,7 +1,7 @@
 # ResearchPilot
 
-[![CI](https://github.com/YOUR-USERNAME/research-pilot/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR-USERNAME/research-pilot/actions/workflows/ci.yml)
-![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
+[![CI](https://github.com/Yarthik/research-pilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Yarthik/research-pilot/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 **An agentic research assistant over your own documents.** Ingest PDFs and web pages, ask questions, and get answers with inline citations. A LangGraph agent plans its searches, checks whether what it found is enough, and searches again when it isn't.
@@ -47,10 +47,10 @@ flowchart LR
 
 ## Quickstart
 
-Requires Python 3.11–3.12.
+Requires Python 3.12+.
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/research-pilot.git
+git clone https://github.com/Yarthik/research-pilot.git
 cd research-pilot
 python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt

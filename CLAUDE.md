@@ -16,7 +16,7 @@ so these parts have NOT yet run against the real libraries and need verifying fi
 - Key phrases in `evals/dataset.jsonl`, written from memory of the papers and not checked against the PDFs
 
 Already verified: pure-Python logic (chunking, BM25, RRF, citations, evidence selection, agent
-nodes, CLI, metrics). Tested on Python 3.12.4 (3.14 is untested): 114 fast tests
+nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 114 fast tests
 (`pytest -m "not slow"`) and 1 slow test (`pytest -m slow`) pass, `ruff` is clean, and
 `requirements.txt` is pinned to the versions that ran. Verified against the real libraries in
 Stage 1: ChromaDB calls in `retrieval/vector_store.py`, FastEmbed embeddings and reranker (slow
@@ -63,4 +63,4 @@ docker compose up --build
 4. API works: `/docs`, `/ask`, `/ask/stream`, upload, delete, API-key and read-only modes.
 5. Retrieval eval runs and its table is in the README; the answer eval runs on a subset.
 6. `docker compose up --build` works and the image builds.
-7. Pushed to GitHub with CI green; README placeholders (`YOUR-USERNAME`, demo link) filled in.
+7. Pushed to GitHub with CI green; README demo-link placeholder filled in.
