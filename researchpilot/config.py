@@ -18,7 +18,7 @@ RETRIEVAL_MODES = ("vector", "bm25", "hybrid", "hybrid_rerank")
 class Settings(BaseModel):
     # --- LLM: change provider/model without touching code ---
     llm_provider: str = "groq"  # groq | openai | anthropic | google_genai | ollama
-    llm_model: str = "llama-3.3-70b-versatile"
+    llm_model: str = "openai/gpt-oss-120b"
     llm_temperature: float = 0.0
     llm_max_retries: int = Field(3, ge=1)  # retries on rate limits / transient errors
 

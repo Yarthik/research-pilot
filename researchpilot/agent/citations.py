@@ -7,6 +7,13 @@ import re
 _BRACKET = re.compile(r"\[(\s*\d+(?:\s*(?:,|-|–|—)\s*\d+)*\s*)\]")
 _RANGE = re.compile(r"(\d+)\s*[-–—]\s*(\d+)")
 MAX_RANGE = 50  # ignore absurd ranges like [1-9999]
+# Some models (gpt-oss) write their native style 【1†L1-L4】 or 【1】 despite the prompt.
+_LENTICULAR = re.compile(r"【\s*(\d+(?:\s*[,\-–—]\s*\d+)*)\s*(?:†[^】]*)?】")
+
+
+def normalize_citations(text: str) -> str:
+    """Rewrite lenticular-bracket markers such as 【1†L1-L4】 as [1], the format the UI and parser expect."""
+    return _LENTICULAR.sub(r"[\1]", text or "")
 
 
 def parse_citations(text: str) -> list[int]:

@@ -141,7 +141,7 @@ Everything is set through environment variables or `.env` (see [.env.example](.e
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `LLM_PROVIDER` / `LLM_MODEL` | `groq` / `llama-3.3-70b-versatile` | Any of `groq`, `openai`, `anthropic`, `google_genai`, `ollama` |
+| `LLM_PROVIDER` / `LLM_MODEL` | `groq` / `openai/gpt-oss-120b` | Any of `groq`, `openai`, `anthropic`, `google_genai`, `ollama` |
 | `RETRIEVAL_MODE` | `hybrid_rerank` | `vector`, `bm25`, `hybrid`, `hybrid_rerank` |
 | `FINAL_K` / `CANDIDATE_K` | `5` / `20` | Chunks kept per query / candidates per retriever before fusion |
 | `MAX_RETRIEVAL_ROUNDS` | `2` | `1` turns off the self-correcting retry |

@@ -15,7 +15,7 @@ from ..ingestion.chunking import Chunk
 from ..llm import LLMConfigError
 from ..retrieval import hybrid
 from ..tools.web_search import web_search, web_search_available
-from .citations import parse_citations, split_valid
+from .citations import normalize_citations, parse_citations, split_valid
 from .evidence import select_evidence
 from .prompts import ANSWER_PROMPT, GRADE_PROMPT, PLAN_PROMPT
 from .schemas import Answer, ContextGrade, ResearchPlan
@@ -218,6 +218,7 @@ def generate(state: ResearchState) -> dict:
             listed, insufficient = [], True
 
     # Trust the markers actually written in the text over the model's self-reported list.
+    answer = normalize_citations(answer)
     numbers = parse_citations(answer) or list(dict.fromkeys(listed))
     valid, invalid = split_valid(numbers, len(evidence))
     citations = [{"n": n, **evidence[n - 1]} for n in valid]

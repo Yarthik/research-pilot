@@ -1,5 +1,12 @@
-from researchpilot.agent.citations import parse_citations, split_valid
+from researchpilot.agent.citations import normalize_citations, parse_citations, split_valid
 from researchpilot.agent.evidence import select_evidence
+
+
+def test_normalize_lenticular_citations():
+    text = "Low-rank【1†L1-L4】【2】, ranges【3-4†source】, list【1, 5】, untouched 【note】 and [6]."
+    assert normalize_citations(text) == "Low-rank[1][2], ranges[3-4], list[1, 5], untouched 【note】 and [6]."
+    assert parse_citations(normalize_citations(text)) == [1, 2, 3, 4, 5, 6]
+    assert normalize_citations(None) == ""
 
 
 def test_parse_simple_and_adjacent_citations():
