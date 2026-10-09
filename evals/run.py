@@ -3,6 +3,8 @@
 python -m evals retrieval                    # retrieval quality per mode (free: no LLM calls)
 python -m evals answers --limit 10           # end-to-end answer quality (uses the LLM + judge)
 python -m evals answers --compare-retry      # ablation: 1 retrieval round vs 2
+python -m evals answers --rounds 1           # one config; saved after every question, re-run to resume
+python -m evals rejudge --rounds 1           # re-grade saved answers after a judge-prompt change
 python -m evals all --update-readme          # everything, and refresh the tables in README.md
 """
 
@@ -107,6 +109,32 @@ def run_retrieval(dataset: list[dict], modes: list[str], k: int, retriever=None)
 
 
 # --------------------------------------------------------------------------- answers
+class QuotaExhausted(RuntimeError):
+    """An LLM rate limit or quota stopped the run. Progress is saved; re-run to resume."""
+
+
+_RATE_LIMIT_MARKERS = ("429", "rate limit", "rate_limit", "too many requests", "quota")
+
+
+def is_rate_limit(error: object) -> bool:
+    """True for rate-limit / quota errors (an exception or an error string from the agent's trace)."""
+    if getattr(error, "status_code", None) == 429 or type(error).__name__ == "RateLimitError":
+        return True
+    return any(marker in str(error).lower() for marker in _RATE_LIMIT_MARKERS)
+
+
+def _load_checkpoint(path: Path | None, meta: dict) -> list[dict]:
+    """Rows already evaluated by an earlier, interrupted run with the same configuration."""
+    if path is None or not path.exists():
+        return []
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    keys = ("llm", "mode", "max_rounds", "judge", "judge_prompt")
+    if any(saved["meta"].get(k) != meta.get(k) for k in keys):
+        theirs = {k: saved["meta"].get(k) for k in keys}
+        raise SystemExit(f"{path} was made with a different configuration {theirs}; delete it to start over.")
+    return saved["details"]
+
+
 def run_answers(
     dataset: list[dict],
     mode: str | None = None,
@@ -114,8 +142,16 @@ def run_answers(
     delay: float = 0.0,
     ask_fn=None,
     judge=None,
+    checkpoint: Path | None = None,
 ) -> dict:
-    from .judge import judge_correctness, judge_faithfulness
+    """Run the agent and the judge on each question.
+
+    With `checkpoint`, results are saved after every question and questions already in the file are
+    skipped, so an interrupted run resumes where it stopped. A rate-limit or quota error (raised, or
+    swallowed by an agent step and left in its trace) saves progress and raises QuotaExhausted
+    without recording the question, so quota trouble never shows up as a wrong answer.
+    """
+    from .judge import CORRECTNESS_PROMPT_VERSION, judge_correctness, judge_faithfulness
 
     if ask_fn is None:
         from researchpilot.agent.graph import ask as ask_fn
@@ -125,15 +161,53 @@ def run_answers(
 
         judge, judge_name = get_judge()
 
-    rows = []
+    meta = {
+        **_meta(),
+        "mode": mode or get_settings().retrieval_mode,
+        "max_rounds": max_rounds or get_settings().max_retrieval_rounds,
+        "judge": judge_name,
+        "judge_prompt": CORRECTNESS_PROMPT_VERSION,
+    }
+    wanted = {row["id"] for row in dataset}
+    rows = [r for r in _load_checkpoint(checkpoint, meta) if r["id"] in wanted]
+    done = {r["id"] for r in rows}
+    if done:
+        print(f"  resuming: {len(done)} of {len(dataset)} questions already in {checkpoint.name}")
+
+    order = {row["id"]: i for i, row in enumerate(dataset)}
+
+    def snapshot() -> dict:
+        ordered = sorted(rows, key=lambda r: order[r["id"]])
+        complete = len(rows) == len(dataset)
+        return {"meta": meta, "complete": complete, "summary": summarize_answers(ordered), "details": ordered}
+
+    def save() -> None:
+        if checkpoint is not None:
+            checkpoint.parent.mkdir(parents=True, exist_ok=True)
+            checkpoint.write_text(json.dumps(snapshot(), indent=2, default=str), encoding="utf-8")
+
+    def stop(row: dict, error: object) -> QuotaExhausted:
+        save()
+        done_n = f"{len(rows)} of {len(dataset)} done"
+        return QuotaExhausted(f"rate limit / quota reached at {row['id']} ({done_n}): {str(error)[:200]}")
+
     for index, row in enumerate(dataset, start=1):
+        if row["id"] in done:
+            continue
         print(f"  [{index}/{len(dataset)}] {row['id']}: {row['question'][:70]}", flush=True)
         try:
             result = ask_fn(row["question"], mode=mode, max_rounds=max_rounds)
         except Exception as exc:
+            if is_rate_limit(exc):
+                raise stop(row, exc) from exc
             log.error("agent failed on %s: %s", row["id"], exc)
             rows.append({"id": row["id"], "type": row["type"], "error": str(exc)})
+            save()
             continue
+        # Agent steps degrade instead of raising (e.g. a plain-text fallback), so check their errors too.
+        limited = [step["error"] for step in result.get("trace", []) if is_rate_limit(step.get("error") or "")]
+        if limited:
+            raise stop(row, limited[0])
 
         record = {
             "id": row["id"],
@@ -148,7 +222,7 @@ def run_answers(
         if row["type"] == "unanswerable":
             record["abstained"] = metrics.abstained(result["answer"], result["insufficient"])
         else:
-            record["abstained"] = bool(result["insufficient"])
+            record["abstained"] = metrics.declined(result["answer"], result["insufficient"], record["cited"])
             try:
                 record["correctness"] = judge_correctness(judge, row["question"], row["reference"], result["answer"])
                 if result["citations"]:
@@ -158,22 +232,60 @@ def run_answers(
                 elif not record["abstained"]:
                     record["faithfulness"] = {"score": 0.0, "claims": None, "unsupported": ["answer has no citations"]}
             except Exception as exc:
+                if is_rate_limit(exc):
+                    raise stop(row, exc) from exc
                 log.error("judge failed on %s: %s", row["id"], exc)
                 record["judge_error"] = str(exc)
         rows.append(record)
+        save()
         if delay:
             time.sleep(delay)
 
-    return {
-        "meta": {
-            **_meta(),
-            "mode": mode or get_settings().retrieval_mode,
-            "max_rounds": max_rounds or get_settings().max_retrieval_rounds,
-            "judge": judge_name,
-        },
-        "summary": summarize_answers(rows),
-        "details": rows,
-    }
+    return snapshot()
+
+
+def rejudge_correctness(path: Path, dataset: list[dict], judge=None, delay: float = 0.0) -> dict:
+    """Re-grade the correctness of saved answers with the current judge prompt; the agent is not re-run.
+
+    Also recomputes abstention with the current definition. Verdicts already made with the current
+    prompt are kept, so an interrupted re-grade resumes. Faithfulness is left as it is.
+    """
+    from .judge import CORRECTNESS_PROMPT_VERSION, get_judge, judge_correctness
+
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    if judge is None:
+        judge, judge_name = get_judge()
+        if judge_name != saved["meta"]["judge"]:
+            raise SystemExit(f"{path} was judged by {saved['meta']['judge']}, not {judge_name}; set JUDGE_MODEL.")
+    by_id = {row["id"]: row for row in dataset}
+
+    def save() -> None:
+        saved["summary"] = summarize_answers(saved["details"])
+        path.write_text(json.dumps(saved, indent=2, default=str), encoding="utf-8")
+
+    for record in saved["details"]:
+        if record["type"] == "unanswerable" or "error" in record:
+            continue
+        row = by_id[record["id"]]
+        record["abstained"] = metrics.declined(record["answer"], record["insufficient"], record["cited"])
+        if record.get("correctness", {}).get("prompt_version") == CORRECTNESS_PROMPT_VERSION:
+            continue
+        print(f"  re-judging {record['id']}", flush=True)
+        try:
+            record["correctness"] = judge_correctness(judge, row["question"], row["reference"], record["answer"])
+        except Exception as exc:
+            if is_rate_limit(exc):
+                save()
+                message = f"rate limit / quota reached while re-judging {record['id']}: {str(exc)[:200]}"
+                raise QuotaExhausted(message) from exc
+            raise
+        record.pop("judge_error", None)
+        save()
+        if delay:
+            time.sleep(delay)
+    saved["meta"]["judge_prompt"] = CORRECTNESS_PROMPT_VERSION
+    save()
+    return saved
 
 
 def summarize_answers(rows: list[dict]) -> dict:
@@ -202,7 +314,7 @@ def summarize_answers(rows: list[dict]) -> dict:
 # --------------------------------------------------------------------------- CLI
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m evals", description="ResearchPilot evaluation harness")
-    parser.add_argument("command", choices=["retrieval", "answers", "all"])
+    parser.add_argument("command", choices=["retrieval", "answers", "rejudge", "all"])
     parser.add_argument("--dataset", type=Path, default=DATASET)
     parser.add_argument("--modes", nargs="+", choices=RETRIEVAL_MODES, default=list(RETRIEVAL_MODES))
     parser.add_argument("--k", type=int, default=5, help="cut-off for retrieval metrics")
@@ -233,6 +345,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.update_readme:
             update_readme("RETRIEVAL", table)
 
+    if args.command == "rejudge":
+        settings = get_settings()
+        mode, n_rounds = args.mode or settings.retrieval_mode, args.rounds or settings.max_retrieval_rounds
+        checkpoint = RESULTS / f"answers_{mode}_{n_rounds}round.json"
+        print(f"\nRe-judging correctness in {checkpoint.name}")
+        try:
+            rejudge_correctness(checkpoint, dataset, delay=args.delay)
+        except QuotaExhausted as exc:
+            print(f"\nStopped: {exc}\nRun the same command again to resume.")
+            return 2
+        return 0
+
     if args.command in ("answers", "all"):
         subset = dataset[: args.limit] if args.limit else dataset
         runs = {}
@@ -241,10 +365,17 @@ def main(argv: list[str] | None = None) -> int:
             if args.compare_retry
             else [(None, args.rounds)]
         )
+        settings = get_settings()
         for label, rounds in configs:
             print(f"\nAnswer eval{f' - {label}' if label else ''}: {len(subset)} questions")
-            result = run_answers(subset, mode=args.mode, max_rounds=rounds, delay=args.delay)
-            key = label or f"{result['meta']['mode']}, {result['meta']['max_rounds']} round(s)"
+            mode, n_rounds = args.mode or settings.retrieval_mode, rounds or settings.max_retrieval_rounds
+            checkpoint = RESULTS / f"answers_{mode}_{n_rounds}round.json"
+            try:
+                result = run_answers(subset, mode=mode, max_rounds=n_rounds, delay=args.delay, checkpoint=checkpoint)
+            except QuotaExhausted as exc:
+                print(f"\nStopped: {exc}\nProgress is saved in {checkpoint}; run the same command again to resume.")
+                return 2
+            key = label or f"{mode}, {n_rounds} round(s)"
             runs[key] = result
         _save("answers.json", runs)
         table = answers_table(runs)

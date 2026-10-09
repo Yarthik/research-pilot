@@ -13,8 +13,9 @@ from researchpilot.config import get_settings
 
 class CorrectnessVerdict(BaseModel):
     verdict: Literal["correct", "partially_correct", "incorrect"] = Field(
-        description="correct: covers the key facts of the reference; partially_correct: some key facts missing or "
-        "imprecise; incorrect: wrong, contradicts the reference, or doesn't answer"
+        description="correct: answers everything the question asks, consistent with the reference; "
+        "partially_correct: answers only part of what the question asks, or is vague on a key fact; "
+        "incorrect: wrong, contradicts the reference, or doesn't answer"
     )
     reason: str = Field(description="One sentence explaining the verdict")
 
@@ -36,7 +37,17 @@ Reference answer: {reference}
 
 Assistant's answer: {answer}
 
-Judge only whether the assistant's answer conveys the key facts of the reference. Extra correct detail is fine. Different wording is fine. Return a verdict and a one-sentence reason."""
+Judge whether the assistant's answer gives the key facts needed to answer the question, using the reference as the source of truth. Key facts are the parts of the reference that answer what the question asks. Details in the reference beyond what the question asks (background, extra comparisons, explanations of why) are optional: leaving them out is not a reason to lower the verdict. Extra correct detail is fine. Different wording is fine.
+
+- correct: answers everything the question asks, consistent with the reference.
+- partially_correct: answers only part of what the question asks, or is vague or imprecise on a key fact.
+- incorrect: wrong, contradicts the reference, or does not answer the question (including saying the sources don't cover it).
+
+Return a verdict and a one-sentence reason."""
+
+# Bump when CORRECTNESS_PROMPT changes: verdicts record it, and `python -m evals rejudge` re-grades old ones.
+# v2: key facts are what the question asks; extra context in the reference is optional (v1 was too strict).
+CORRECTNESS_PROMPT_VERSION = 2
 
 FAITHFULNESS_PROMPT = """You check whether an answer is grounded in its sources.
 
@@ -64,7 +75,12 @@ def judge_correctness(judge, question: str, reference: str, answer: str) -> dict
     result = llm_module.structured(CorrectnessVerdict, judge).invoke(
         CORRECTNESS_PROMPT.format(question=question, reference=reference, answer=answer)
     )
-    return {"verdict": result.verdict, "score": SCORES[result.verdict], "reason": result.reason}
+    return {
+        "verdict": result.verdict,
+        "score": SCORES[result.verdict],
+        "reason": result.reason,
+        "prompt_version": CORRECTNESS_PROMPT_VERSION,
+    }
 
 
 def judge_faithfulness(judge, question: str, answer: str, sources: list[dict]) -> dict:

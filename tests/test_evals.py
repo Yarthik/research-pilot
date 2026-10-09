@@ -1,6 +1,19 @@
+import json
+
+import pytest
+
 from evals import metrics
 from evals.report import answers_table, retrieval_table, update_readme
-from evals.run import DATASET, load_dataset, run_answers, run_retrieval, summarize_answers
+from evals.run import (
+    DATASET,
+    QuotaExhausted,
+    is_rate_limit,
+    load_dataset,
+    rejudge_correctness,
+    run_answers,
+    run_retrieval,
+    summarize_answers,
+)
 
 
 # --------------------------------------------------------------------------- metrics
@@ -142,6 +155,109 @@ def test_run_answers_with_fake_agent_and_judge(fake_llm):
     assert s["abstention_accuracy"] == 1.0 and s["false_abstention_rate"] == 0.0
     assert s["answers_with_citations"] == 1.0
     assert "| demo |" in answers_table({"demo": result})
+
+
+class _RateLimitError(Exception):
+    status_code = 429
+
+
+def _scripted_ask(calls, fail_on=None, fail_with=None):
+    """A fake agent that answers every question, except `fail_on`, which hits a rate limit."""
+
+    def ask(question, mode=None, max_rounds=None):
+        calls.append(question)
+        if question == fail_on:
+            if fail_with == "trace":  # swallowed by an agent step: shows up only in the trace
+                return {
+                    "answer": "Sorry, the language model request failed.",
+                    "insufficient": True,
+                    "citations": [],
+                    "round": 1,
+                    "seconds": 0.1,
+                    "trace": [{"step": "generate", "error": "Error code: 429 - rate_limit_exceeded (tokens per day)"}],
+                }
+            raise _RateLimitError("Rate limit reached for model on tokens per day (TPD)")
+        return {"answer": "An answer.", "insufficient": False, "citations": [], "round": 1, "seconds": 0.1}
+
+    return ask
+
+
+def test_run_answers_stops_on_quota_and_resumes_from_checkpoint(fake_llm, tmp_path):
+    fake_llm.responses = {"CorrectnessVerdict": [{"verdict": "correct", "reason": "ok"}]}
+    checkpoint = tmp_path / "answers.json"
+    calls = []
+    with pytest.raises(QuotaExhausted, match="q2"):
+        run_answers(
+            DATA, ask_fn=_scripted_ask(calls, fail_on=DATA[1]["question"]), judge=fake_llm, checkpoint=checkpoint
+        )
+    saved = json.loads(checkpoint.read_text(encoding="utf-8"))
+    assert [r["id"] for r in saved["details"]] == ["q1"]  # the rate-limited question is not recorded
+    assert saved["complete"] is False
+
+    calls.clear()
+    result = run_answers(DATA, ask_fn=_scripted_ask(calls), judge=fake_llm, checkpoint=checkpoint)
+    assert calls == [DATA[1]["question"], DATA[2]["question"]]  # q1 was not asked again
+    assert [r["id"] for r in result["details"]] == ["q1", "q2", "u1"] and result["complete"] is True
+    assert result["summary"]["errors"] == 0
+
+
+def test_run_answers_treats_a_rate_limit_swallowed_by_the_agent_as_a_stop(fake_llm, tmp_path):
+    checkpoint = tmp_path / "answers.json"
+    ask = _scripted_ask([], fail_on=DATA[0]["question"], fail_with="trace")
+    with pytest.raises(QuotaExhausted):
+        run_answers(DATA, ask_fn=ask, judge=fake_llm, checkpoint=checkpoint)
+    assert json.loads(checkpoint.read_text(encoding="utf-8"))["details"] == []
+
+
+def test_run_answers_refuses_a_checkpoint_from_another_configuration(fake_llm, tmp_path):
+    fake_llm.responses = {"CorrectnessVerdict": [{"verdict": "correct", "reason": "ok"}]}
+    checkpoint = tmp_path / "answers.json"
+    run_answers(DATA[:1], ask_fn=_scripted_ask([]), judge=fake_llm, checkpoint=checkpoint, max_rounds=1)
+    with pytest.raises(SystemExit, match="different configuration"):
+        run_answers(DATA[:1], ask_fn=_scripted_ask([]), judge=fake_llm, checkpoint=checkpoint, max_rounds=2)
+
+
+def test_declined_requires_no_citations():
+    assert metrics.declined("The sources do not mention this.", True, [])
+    # a cited answer that flags missing detail is still an answer, not an abstention
+    assert not metrics.declined("State of the art [3]; the exact figure is not given.", True, [3])
+    assert not metrics.declined("LoRA uses rank decomposition.", False, [])
+
+
+def test_rejudge_regrades_old_verdicts_and_recomputes_abstention(fake_llm, tmp_path):
+    from evals.judge import CORRECTNESS_PROMPT_VERSION
+
+    checkpoint = tmp_path / "answers.json"
+    old = {"verdict": "partially_correct", "score": 0.5, "reason": "too strict"}  # v1: no prompt_version
+    current = {"verdict": "correct", "score": 1.0, "reason": "ok", "prompt_version": CORRECTNESS_PROMPT_VERSION}
+    rows = [
+        {"id": "q1", "type": "single", "answer": "Rank decomposition [1].", "insufficient": True, "cited": [1],
+         "invalid_citations": [], "rounds": 1, "seconds": 1.0, "abstained": True, "correctness": old},
+        {"id": "q2", "type": "multi", "answer": "Both [1].", "insufficient": False, "cited": [1],
+         "invalid_citations": [], "rounds": 1, "seconds": 1.0, "abstained": False, "correctness": current},
+    ]  # fmt: skip
+    meta = {"judge": "custom", "judge_prompt": 1}
+    checkpoint.write_text(json.dumps({"meta": meta, "complete": True, "details": rows}), encoding="utf-8")
+    fake_llm.responses = {"CorrectnessVerdict": [{"verdict": "correct", "reason": "answers the question"}]}
+
+    saved = rejudge_correctness(checkpoint, DATA, judge=fake_llm)
+    names = [name for name, _ in fake_llm.calls]
+    assert names.count("CorrectnessVerdict") == 1  # only the old verdict was re-graded
+    q1, q2 = saved["details"]
+    assert (
+        q1["correctness"]["verdict"] == "correct" and q1["correctness"]["prompt_version"] == CORRECTNESS_PROMPT_VERSION
+    )
+    assert q1["abstained"] is False  # cited answer: no longer counted as an abstention
+    assert q2["correctness"] == current
+    assert saved["meta"]["judge_prompt"] == CORRECTNESS_PROMPT_VERSION
+    assert saved["summary"]["false_abstention_rate"] == 0.0
+    assert json.loads(checkpoint.read_text(encoding="utf-8"))["summary"]["correctness"] == 1.0
+
+
+def test_is_rate_limit():
+    assert is_rate_limit(_RateLimitError("x"))
+    assert is_rate_limit("Error code: 429 - {'code': 'rate_limit_exceeded'}")
+    assert not is_rate_limit(ValueError("could not parse structured output")) and not is_rate_limit("")
 
 
 def test_summarize_answers_counts_errors_and_uncited_answers():

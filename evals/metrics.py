@@ -90,3 +90,12 @@ ABSTAIN_PATTERNS = re.compile(
 def abstained(answer: str, insufficient_flag: bool) -> bool:
     """Did the agent decline to answer? Uses the structured flag, or wording when the flag is missing."""
     return bool(insufficient_flag) or bool(ABSTAIN_PATTERNS.search(answer or ""))
+
+
+def declined(answer: str, insufficient_flag: bool, cited: list) -> bool:
+    """For answerable questions: did the agent decline instead of answering?
+
+    A cited answer counts as an answer even when the agent flags that some information was missing
+    (e.g. "state of the art [3], but the exact figure isn't in the excerpts").
+    """
+    return not cited and abstained(answer, insufficient_flag)
