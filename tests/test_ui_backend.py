@@ -47,3 +47,15 @@ def test_get_backend_picks_mode(monkeypatch):
     assert isinstance(get_backend(), LocalBackend)
     monkeypatch.setenv("API_URL", "http://localhost:8000")
     assert isinstance(get_backend(), ApiBackend)
+
+
+@pytest.mark.parametrize("daily", [True, False])
+def test_both_backends_raise_the_same_rate_limit_error(backend, fake_llm, daily):
+    from researchpilot.llm import LLMRateLimitError
+    from tests.conftest import quota_error
+
+    fake_llm.responses = {"ResearchPlan": [quota_error(daily=daily)]}
+    with pytest.raises(LLMRateLimitError) as caught:
+        list(backend.ask_stream("How does LoRA work?"))
+    assert caught.value.daily is daily
+    assert "org_secret" not in str(caught.value)

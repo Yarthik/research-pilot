@@ -1,8 +1,11 @@
 """Agent nodes tested one at a time with a scripted LLM (no LangGraph needed)."""
 
+import pytest
+
 from researchpilot.agent import nodes
 from researchpilot.agent.schemas import Answer
-from tests.conftest import make_chunk
+from researchpilot.llm import LLMRateLimitError
+from tests.conftest import make_chunk, quota_error
 
 
 def test_plan_uses_llm_queries(fake_llm):
@@ -206,4 +209,25 @@ def test_llm_configuration_errors_are_not_swallowed(monkeypatch):
     with pytest.raises(llm.LLMConfigError):
         nodes.plan({"question": "q"})
     with pytest.raises(llm.LLMConfigError):
+        nodes.generate({"question": "q", "evidence": EVIDENCE})
+
+
+def test_a_rate_limit_is_raised_not_hidden_by_a_degraded_step(loaded_retriever, fake_llm):
+    # Plan, grade and generate degrade on ordinary failures, but a rate limit would only repeat on every
+    # step and end in a raw provider error shown as the answer. It must reach the caller instead.
+    fake_llm.responses = {"ResearchPlan": [quota_error()]}
+    with pytest.raises(LLMRateLimitError):
+        nodes.plan({"question": "q"})
+    fake_llm.responses = {"ContextGrade": [quota_error()]}
+    with pytest.raises(LLMRateLimitError):
+        nodes.grade({"question": "q", "evidence": EVIDENCE, "round": 1})
+    fake_llm.responses = {"Answer": [quota_error()]}
+    with pytest.raises(LLMRateLimitError):
+        nodes.generate({"question": "q", "evidence": EVIDENCE})
+
+
+def test_a_rate_limit_in_the_plain_text_fallback_is_raised_too(fake_llm, monkeypatch):
+    fake_llm.responses = {"Answer": [RuntimeError("could not parse structured output")]}
+    monkeypatch.setattr(fake_llm, "invoke", lambda prompt: (_ for _ in ()).throw(quota_error()))
+    with pytest.raises(LLMRateLimitError):
         nodes.generate({"question": "q", "evidence": EVIDENCE})

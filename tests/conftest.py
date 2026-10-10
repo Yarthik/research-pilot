@@ -205,3 +205,9 @@ def fake_llm(monkeypatch):
     fake = FakeLLM()
     monkeypatch.setattr(llm, "get_llm", lambda: fake)
     return fake
+
+
+def quota_error(daily: bool = True) -> Exception:
+    """What a provider SDK raises when the free-tier quota is used up (worded like Groq's, with an org id)."""
+    window = "tokens per day (TPD)" if daily else "tokens per minute (TPM)"
+    return RuntimeError(f"Error code: 429 - Rate limit reached for model `m` in organization `org_secret` on {window}")

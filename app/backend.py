@@ -90,9 +90,14 @@ class ApiBackend:
     def _check(self, response):
         if response.status_code >= 400:
             try:
-                detail = response.json().get("detail", response.text)
+                body = response.json()
+                detail = body.get("detail", response.text)
             except ValueError:
-                detail = response.text
+                body, detail = {}, response.text
+            if response.status_code == 429:  # the API's LLM provider is rate-limited
+                from researchpilot.llm import LLMRateLimitError
+
+                raise LLMRateLimitError(daily=bool(body.get("daily")))
             raise RuntimeError(f"API error {response.status_code}: {detail}")
         return response
 
@@ -128,6 +133,10 @@ class ApiBackend:
                     continue
                 event = json.loads(line)
                 if event.get("type") == "error":
+                    if event.get("code") == "rate_limit":
+                        from researchpilot.llm import LLMRateLimitError
+
+                        raise LLMRateLimitError(daily=bool(event.get("daily")))
                     raise RuntimeError(event.get("detail", "unknown error"))
                 yield event
 

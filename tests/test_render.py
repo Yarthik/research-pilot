@@ -37,3 +37,14 @@ def test_existing_dollar_maths_and_plain_text_are_untouched():
     text = r"rank $r$ is small, already \$5"
     assert streamlit_markdown(text) == text
     assert streamlit_markdown("") == "" and streamlit_markdown(None) == ""
+
+
+def test_rate_limit_notice_is_friendly_and_points_to_the_repo():
+    from render import GITHUB_URL, rate_limit_notice
+
+    daily = rate_limit_notice(daily=True)
+    assert "today's free-tier limit" in daily and "try again later" in daily and GITHUB_URL in daily
+    busy = rate_limit_notice(daily=False)
+    assert "try again in a minute" in busy and "today" not in busy
+    for text in (daily, busy):
+        assert "429" not in text and "Error" not in text

@@ -19,12 +19,12 @@ for path in (ROOT, ROOT / "app"):  # importable without `pip install -e .`
 
 import streamlit as st  # noqa: E402
 from backend import get_backend  # noqa: E402
-from render import short_title, streamlit_markdown  # noqa: E402
+from render import GITHUB_URL, rate_limit_notice, short_title, streamlit_markdown  # noqa: E402
 
 from researchpilot import __version__  # noqa: E402
 from researchpilot.cli import read_sources_file  # noqa: E402
 from researchpilot.config import RETRIEVAL_MODES, get_settings  # noqa: E402
-from researchpilot.llm import LLMConfigError  # noqa: E402
+from researchpilot.llm import LLMConfigError, LLMRateLimitError  # noqa: E402
 
 SAMPLE_FILE = ROOT / "data" / "sample_sources.txt"
 EXAMPLES = [
@@ -213,6 +213,8 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         if message["role"] == "user":
             st.markdown(message["content"])
+        elif "notice" in message:  # the question couldn't be answered (e.g. the LLM quota is used up)
+            st.warning(message["notice"], icon="⏳")
         else:
             render_result(message["result"], show_trace)
 
@@ -223,7 +225,7 @@ elif limit_reached:
     st.info(
         f"Thanks for trying ResearchPilot! This public demo allows {question_limit} "
         f"question{'' if question_limit == 1 else 's'} per session "
-        "to keep it free for everyone. To keep exploring, run it yourself from the GitHub repository.",
+        f"to keep it free for everyone. To keep exploring, run it yourself from the [GitHub repository]({GITHUB_URL}).",
         icon="🙏",
     )
 elif not st.session_state.messages and not question:
@@ -243,16 +245,21 @@ if question and not limit_reached:
     with st.chat_message("user"):
         st.markdown(question)
     with st.chat_message("assistant"):
-        result = None
+        result, notice = None, None
         try:
             with st.status("Researching...", expanded=True) as status:
-                for event in backend().ask_stream(question, mode=mode):
-                    if event["type"] == "step":
-                        status.write(f"{STEP_ICONS.get(event['step'], '•')} {describe_step(event)}")
-                    elif event["type"] == "result":
-                        result = event
-                label = f"Done in {result['seconds']}s" if result else "Finished"
-                status.update(label=label, state="complete", expanded=False)
+                try:
+                    for event in backend().ask_stream(question, mode=mode):
+                        if event["type"] == "step":
+                            status.write(f"{STEP_ICONS.get(event['step'], '•')} {describe_step(event)}")
+                        elif event["type"] == "result":
+                            result = event
+                except LLMRateLimitError as exc:  # the provider's quota is used up: friendly message, not the error
+                    notice = rate_limit_notice(exc.daily)
+                    status.update(label="The LLM's free-tier limit was reached", state="error", expanded=False)
+                else:
+                    label = f"Done in {result['seconds']}s" if result else "Finished"
+                    status.update(label=label, state="complete", expanded=False)
         except LLMConfigError as exc:
             st.error(f"The LLM isn't configured: {exc}. Set LLM_PROVIDER, LLM_MODEL and the API key in `.env`.")
         except Exception as exc:
@@ -260,5 +267,10 @@ if question and not limit_reached:
         if result:
             render_result(result, show_trace)
             st.session_state.messages.append({"role": "assistant", "result": result})
-            if question_limit is not None:
-                st.rerun()  # update the questions-left count, and disable the input once the limit is hit
+        else:
+            st.session_state.questions_asked -= 1  # only answered questions count towards the demo limit
+            if notice:
+                st.warning(notice, icon="⏳")
+                st.session_state.messages.append({"role": "assistant", "notice": notice})
+        if result and question_limit is not None:
+            st.rerun()  # update the questions-left count, and disable the input once the limit is hit

@@ -29,3 +29,16 @@ def short_title(title: str, limit: int = 80) -> str:
         return title
     cut = title[: limit + 1].rsplit(" ", 1)[0] if " " in title[:limit] else title[:limit]
     return cut.rstrip(" ,;:-–—") + "…"
+
+
+GITHUB_URL = "https://github.com/Yarthik/research-pilot"
+
+
+def rate_limit_notice(daily: bool) -> str:
+    """What visitors see when the LLM provider's rate limit or quota stops a question (never the raw error)."""
+    if daily:
+        return (
+            "The demo has reached today's free-tier limit. Please try again later, "
+            f"or see the [GitHub repository]({GITHUB_URL}) to run it yourself."
+        )
+    return "The demo is very busy right now (the free tier's per-minute limit was hit). Please try again in a minute."

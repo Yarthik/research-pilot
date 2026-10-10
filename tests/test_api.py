@@ -109,3 +109,24 @@ def test_llm_config_error_returns_503(client, monkeypatch):
     monkeypatch.setattr(graph, "get_graph", broken)
     response = client.post("/ask", json={"question": "LoRA?"})
     assert response.status_code == 503 and "langchain-groq" in response.json()["detail"]
+
+
+def test_llm_rate_limit_returns_429_without_the_providers_text(client, fake_llm):
+    from tests.conftest import quota_error
+
+    fake_llm.responses = {"ResearchPlan": [quota_error(daily=True)]}
+    response = client.post("/ask", json={"question": "How does LoRA work?"})
+    assert response.status_code == 429
+    assert response.json()["daily"] is True
+    assert "org_secret" not in response.text and "Traceback" not in response.text
+
+
+def test_ask_stream_reports_a_rate_limit_as_a_typed_event(client, fake_llm):
+    from tests.conftest import quota_error
+
+    fake_llm.responses = {"ResearchPlan": [quota_error(daily=False)]}
+    response = client.post("/ask/stream", json={"question": "How does LoRA work?"})
+    events = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+    assert events[-1]["type"] == "error" and events[-1]["code"] == "rate_limit"
+    assert events[-1]["daily"] is False
+    assert "org_secret" not in response.text

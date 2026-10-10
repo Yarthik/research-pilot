@@ -21,7 +21,7 @@ from fastapi.security import APIKeyHeader
 
 from .. import __version__
 from ..config import get_settings
-from ..llm import LLMConfigError
+from ..llm import LLMConfigError, LLMRateLimitError
 from .schemas import (
     AskRequest,
     AskResponse,
@@ -95,6 +95,10 @@ def create_app() -> FastAPI:
     @app.exception_handler(LLMConfigError)
     async def _llm_config_error(_request, exc: LLMConfigError):
         return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+    @app.exception_handler(LLMRateLimitError)
+    async def _llm_rate_limited(_request, exc: LLMRateLimitError):
+        return JSONResponse(status_code=429, content={"detail": str(exc), "daily": exc.daily})
 
     @app.get("/health", response_model=HealthResponse, tags=["system"])
     def health() -> HealthResponse:
@@ -193,6 +197,9 @@ def create_app() -> FastAPI:
             try:
                 for event in ask_stream(body.question, mode=body.mode, max_rounds=body.max_rounds):
                     yield json.dumps(event, default=str) + "\n"
+            except LLMRateLimitError as exc:  # already logged; send a typed event clients can show nicely
+                event = {"type": "error", "code": "rate_limit", "detail": str(exc), "daily": exc.daily}
+                yield json.dumps(event) + "\n"
             except Exception as exc:
                 log.exception("streaming request failed")
                 yield json.dumps({"type": "error", "detail": str(exc)}) + "\n"

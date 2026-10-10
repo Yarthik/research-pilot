@@ -13,7 +13,7 @@ from itertools import zip_longest
 from .. import llm as llm_module
 from ..config import get_settings
 from ..ingestion.chunking import Chunk
-from ..llm import LLMConfigError
+from ..llm import FATAL_LLM_ERRORS
 from ..retrieval import hybrid
 from ..tools.web_search import web_search, web_search_available
 from .citations import normalize_citations, parse_citations, split_valid
@@ -72,7 +72,7 @@ def plan(state: ResearchState) -> dict:
         if result:
             queries = _clean_queries(result.sub_queries, 3)
             needs_web = bool(result.needs_web) and web_search_available()
-    except LLMConfigError:
+    except FATAL_LLM_ERRORS:
         raise  # a missing key or package isn't transient: surface it instead of degrading
     except Exception as exc:  # smaller models sometimes fail structured output
         error = str(exc)[:200]
@@ -159,7 +159,7 @@ def grade(state: ResearchState) -> dict:
                 missing = result.missing
                 previous = {q.lower() for q in state.get("sub_queries") or []}
                 new_queries = [q for q in _clean_queries(result.rewritten_queries, 2) if q.lower() not in previous]
-        except LLMConfigError:
+        except FATAL_LLM_ERRORS:
             raise
         except Exception as exc:
             error = str(exc)[:200]
@@ -210,13 +210,15 @@ def generate(state: ResearchState) -> dict:
         if result is None or not result.answer.strip():
             raise ValueError("empty structured output")
         answer, listed, insufficient = result.answer.strip(), result.cited_sources, result.insufficient_information
-    except LLMConfigError:
+    except FATAL_LLM_ERRORS:
         raise
     except Exception as exc:
         error = str(exc)[:200]
         log.warning("structured answer failed, falling back to plain text: %s", exc)
         try:
             answer, listed, insufficient = llm_module.complete(prompt).strip(), [], False
+        except FATAL_LLM_ERRORS:
+            raise
         except Exception as inner:
             log.error("answer generation failed: %s", inner)
             answer = f"Sorry, the language model request failed: {str(inner)[:200]}"

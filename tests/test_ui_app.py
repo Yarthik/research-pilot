@@ -85,3 +85,30 @@ def test_auto_ingest_retries_only_the_missing_sample_papers(retriever, monkeypat
     assert calls == [samples, samples[-1:]]  # only the paper that failed is fetched again
     AppTest.from_file(str(APP), default_timeout=60).run()
     assert len(calls) == 2  # all present now: nothing more to do
+
+
+@pytest.mark.parametrize(
+    "daily, expected",
+    [(True, "today's free-tier limit"), (False, "try again in a minute")],
+)
+def test_rate_limit_shows_a_friendly_message_not_the_raw_error(
+    loaded_retriever, fake_llm, monkeypatch, daily, expected
+):
+    from tests.conftest import quota_error
+
+    fake_llm.responses = {"ResearchPlan": [quota_error(daily=daily)]}
+    at = _app(monkeypatch, DEMO_MAX_QUESTIONS="2").run()
+    at.chat_input[0].set_value("How does LoRA work?").run()
+
+    assert not at.exception  # no traceback
+    assert not at.error  # no red error box
+    assert any(expected in w.value for w in at.warning)
+    page = " ".join(el.value for group in (at.markdown, at.warning, at.error, at.caption) for el in group)
+    assert "org_secret" not in page and "429" not in page and "Sorry, the language model request failed" not in page
+
+    # an unanswered question doesn't use up the visitor's allowance, and the message stays on later reruns
+    assert at.session_state["questions_asked"] == 0
+    assert any("2 of 2 left" in c.value for c in at.sidebar.caption)
+    at.run()
+    assert any(expected in w.value for w in at.warning)
+    assert not at.chat_input[0].disabled

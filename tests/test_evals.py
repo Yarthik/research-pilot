@@ -307,3 +307,16 @@ def test_update_readme_replaces_only_the_marked_section(tmp_path):
         == "intro\n<!-- EVAL:RETRIEVAL:START -->\n| new |\n<!-- EVAL:RETRIEVAL:END -->\noutro\n"
     )
     assert not update_readme("ANSWERS", "x", readme)
+
+
+def test_run_answers_stops_on_the_agents_own_rate_limit_error(fake_llm, tmp_path):
+    from researchpilot.llm import LLMRateLimitError
+
+    def ask(question, mode=None, max_rounds=None):
+        raise LLMRateLimitError(daily=True)
+
+    assert is_rate_limit(LLMRateLimitError())
+    checkpoint = tmp_path / "answers.json"
+    with pytest.raises(QuotaExhausted):
+        run_answers(DATA, ask_fn=ask, judge=fake_llm, checkpoint=checkpoint)
+    assert json.loads(checkpoint.read_text(encoding="utf-8"))["details"] == []  # nothing recorded as a failure

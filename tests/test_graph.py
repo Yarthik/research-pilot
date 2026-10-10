@@ -81,3 +81,15 @@ def test_stream_yields_steps_then_result(loaded_retriever, fake_llm):
     assert [e["type"] for e in events] == ["step", "step", "step", "step", "result"]
     assert [e["step"] for e in events[:-1]] == ["plan", "retrieve", "grade", "generate"]
     assert events[-1]["answer"].startswith("LoRA injects")
+
+
+def test_rate_limit_stops_the_whole_question_instead_of_degrading(loaded_retriever, fake_llm):
+    from researchpilot.llm import LLMRateLimitError
+    from tests.conftest import quota_error
+
+    fake_llm.responses = {"ResearchPlan": [quota_error(daily=True)]}
+    with pytest.raises(LLMRateLimitError) as caught:
+        ask("How does LoRA work?")
+    assert caught.value.daily is True
+    assert len(fake_llm.calls) == 1  # failed fast: no doomed grade/answer calls after the first one
+    assert "org_secret" not in str(caught.value)

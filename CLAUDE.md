@@ -16,7 +16,7 @@ so these parts have NOT yet run against the real libraries and need verifying fi
 - The live Hugging Face Space (prepared in Stage 6; the owner deploys it with their own token)
 
 Already verified: pure-Python logic (chunking, BM25, RRF, citations, evidence selection, agent
-nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 137 fast tests
+nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 158 fast tests
 (`pytest -m "not slow"`) and 1 slow test (`pytest -m slow`) pass, `ruff` is clean, and
 `requirements.txt` is pinned to the versions that ran. Verified against the real libraries in
 Stage 1: ChromaDB calls in `retrieval/vector_store.py`, FastEmbed embeddings and reranker (slow
@@ -69,6 +69,14 @@ retries on the next page load if a download failed. A simulated fresh Space (emp
 upload/delete. `scripts/deploy_hf_space.sh` exports with `core.autocrlf=false` (Git for Windows'
 `git archive` otherwise writes CRLF) and has `DRY_RUN=1`; it was dry-run from Git Bash, never
 pushed by Claude. Steps and Space variables are in docs/DEPLOY.md.
+
+Rate limits: a provider 429/quota error becomes `LLMRateLimitError` (generic message, `daily` flag, raw
+text only in `detail` and the logs) in `llm._Guarded`. The agent nodes re-raise it (`FATAL_LLM_ERRORS`)
+instead of degrading, since before that a quota-exhausted question ended with the raw Groq JSON, org id
+included, as its answer. The API returns 429 (`/ask`) or a typed `rate_limit` stream event; the UI
+shows `render.rate_limit_notice` and doesn't count the question. The daily-vs-minute wording relies on
+Groq's message containing "per day" / (TPD) / (RPD); otherwise the per-minute notice is shown. The
+eval's quota stop recognises the new exception.
 
 ## Commands
 

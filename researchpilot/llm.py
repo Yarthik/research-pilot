@@ -22,6 +22,29 @@ class LLMConfigError(RuntimeError):
     """Raised when the configured LLM provider can't be initialised."""
 
 
+class LLMRateLimitError(RuntimeError):
+    """The provider's rate limit or quota stopped a request, even after retries.
+
+    The message is generic on purpose: the provider's own text (which can include organisation ids and
+    usage figures) is kept in `detail` for logs and never shown to users. `daily` is True when a
+    per-day quota is used up, so waiting a minute won't help.
+    """
+
+    def __init__(
+        self,
+        message: str = "The language model's rate limit or quota was reached.",
+        *,
+        daily: bool = False,
+        detail: str = "",
+    ):
+        super().__init__(message)
+        self.daily, self.detail = daily, detail
+
+
+# Errors the agent must not paper over with a degraded answer: retrying or guessing won't help.
+FATAL_LLM_ERRORS = (LLMConfigError, LLMRateLimitError)
+
+
 def make_llm(provider: str, model: str, temperature: float = 0.0):
     """Create a LangChain chat model for any supported provider."""
     try:
@@ -65,8 +88,29 @@ def is_config_error(exc: Exception) -> bool:
     return "api key" in text or "api_key" in text or unknown_model
 
 
+RATE_LIMIT_NAMES = {"RateLimitError", "ResourceExhausted", "TooManyRequests"}
+_DAILY_MARKERS = ("per day", "(tpd)", "(rpd)", "daily", "insufficient_quota", "billing")
+
+
+def is_rate_limit_error(exc: Exception) -> bool:
+    """True for HTTP 429 / quota errors from any provider (Groq, OpenAI, Anthropic, Google)."""
+    if isinstance(exc, LLMRateLimitError):
+        return True
+    if type(exc).__name__ in RATE_LIMIT_NAMES or getattr(exc, "status_code", None) == 429:
+        return True
+    text = str(exc).lower()
+    return "rate_limit_exceeded" in text or "resource_exhausted" in text or "error code: 429" in text
+
+
+def _rate_limit_error(exc: Exception) -> LLMRateLimitError:
+    text = str(exc)
+    daily = any(marker in text.lower() for marker in _DAILY_MARKERS)
+    return LLMRateLimitError(daily=daily, detail=f"{type(exc).__name__}: {text[:500]}")
+
+
 class _Guarded:
-    """Invokes a runnable and turns authentication/configuration failures into LLMConfigError."""
+    """Invokes a runnable and turns authentication, configuration and rate-limit failures into
+    LLMConfigError and LLMRateLimitError (after the retries wrapped around the runnable)."""
 
     def __init__(self, runnable) -> None:
         self.runnable = runnable
@@ -77,6 +121,10 @@ class _Guarded:
         except Exception as exc:
             if is_config_error(exc) and not isinstance(exc, LLMConfigError):
                 raise LLMConfigError(f"LLM request failed ({type(exc).__name__}): {str(exc)[:300]}") from exc
+            if is_rate_limit_error(exc) and not isinstance(exc, LLMRateLimitError):
+                limited = _rate_limit_error(exc)
+                log.warning("LLM rate limit reached (daily=%s): %s", limited.daily, limited.detail)
+                raise limited from exc
             raise
 
 
