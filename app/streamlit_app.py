@@ -19,6 +19,7 @@ for path in (ROOT, ROOT / "app"):  # importable without `pip install -e .`
 
 import streamlit as st  # noqa: E402
 from backend import get_backend  # noqa: E402
+from render import streamlit_markdown  # noqa: E402
 
 from researchpilot import __version__  # noqa: E402
 from researchpilot.cli import read_sources_file  # noqa: E402
@@ -82,13 +83,13 @@ def render_citations(citations: list[dict]) -> None:
         icon = "🌐" if c.get("origin") == "web" else "📄"
         with st.expander(f"[{c['n']}] {icon} {c['title'][:90]}{page}"):
             st.caption(c["source"])
-            st.write(c["text"])
+            st.markdown(streamlit_markdown(c["text"]))
 
 
 def render_result(result: dict, show_trace: bool) -> None:
     if result.get("insufficient"):
         st.warning("The documents don't fully answer this question.", icon="⚠️")
-    st.markdown(result["answer"])
+    st.markdown(streamlit_markdown(result["answer"]))
     render_citations(result.get("citations", []))
     st.caption(
         f"{result.get('seconds', 0)}s · {result.get('round') or 0} retrieval round(s) · "
@@ -189,7 +190,7 @@ with st.sidebar:
 # --------------------------------------------------------------------------- chat
 st.header("Ask your documents")
 st.caption(
-    "A LangGraph agent plans searches, retrieves with hybrid BM25 + vector search and a cross-encoder reranker, "
+    "A LangGraph agent plans searches, retrieves with hybrid BM25 + vector search (optional cross-encoder reranking), "
     "checks whether the context is enough (searching again if not), and answers with citations."
 )
 

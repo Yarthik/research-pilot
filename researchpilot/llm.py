@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 
 from .config import get_settings
+
+log = logging.getLogger(__name__)
 
 PROVIDER_PACKAGES = {
     "groq": "langchain-groq",
@@ -77,10 +80,33 @@ class _Guarded:
             raise
 
 
+def _with_schema(llm, schema):
+    """Structured output: Groq's native JSON-schema mode where possible, tool calling otherwise.
+
+    With tool calling, gpt-oss on Groq sometimes writes the JSON as plain text instead of calling the
+    tool, and Groq rejects the reply (400 tool_use_failed). JSON-schema mode avoids that; strict=True
+    constrains decoding for models that support it (langchain-groq drops it for the others). A 400
+    from JSON-schema mode (unsupported model, output failing validation) falls back to tool calling.
+    Rate limits are not caught here, so they still reach the retry and quota handling.
+    """
+    tool_calling = llm.with_structured_output(schema)
+    if getattr(llm, "_llm_type", "") != "groq-chat":
+        return tool_calling
+    from groq import BadRequestError
+    from langchain_core.runnables import RunnableLambda
+
+    def fall_back(prompt):
+        log.warning("JSON-schema structured output was rejected for %s; using tool calling", schema.__name__)
+        return tool_calling.invoke(prompt)
+
+    native = llm.with_structured_output(schema, method="json_schema", strict=True)
+    return native.with_fallbacks([RunnableLambda(fall_back)], exceptions_to_handle=(BadRequestError,))
+
+
 def structured(schema, llm=None) -> _Guarded:
     """A runnable that returns an instance of the Pydantic `schema`."""
     llm = llm or get_llm()
-    return _Guarded(with_retry(llm.with_structured_output(schema)))
+    return _Guarded(with_retry(_with_schema(llm, schema)))
 
 
 def complete(prompt: str, llm=None) -> str:
