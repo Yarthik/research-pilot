@@ -25,6 +25,41 @@ def test_dollar_maths_starting_with_a_digit_is_not_mistaken_for_currency():
     assert streamlit_markdown(text) == text
 
 
+def test_maths_starting_with_a_digit_is_maths_by_pandocs_rule():
+    # Seen live: "$2dr$" rendered as raw text because "$2" was escaped as money.
+    for text in ("LoRA trains only $2dr$, not $d^2$", "$2dr$,", "$d^2$", "($2dr$)", "$2dr$."):
+        assert streamlit_markdown(text) == text
+
+
+def test_dollars_that_cannot_open_or_close_maths_are_currency():
+    assert streamlit_markdown("costs $5 and $10") == r"costs \$5 and \$10"
+    assert streamlit_markdown("from $5 to $10.") == r"from \$5 to \$10."
+    # The closing "$" is the next one, and it follows a space, so "$5 ... $" is not maths.
+    assert streamlit_markdown("costs $5 and $d^2$") == r"costs \$5 and $d^2$"
+    # A closing "$" followed by a digit doesn't close, so neither "$" is maths.
+    assert streamlit_markdown("$x$5") == r"\$x\$5"
+    # An opening "$" followed by a space doesn't open.
+    assert streamlit_markdown("$ x$ and $ y") == r"\$ x\$ and \$ y"
+    assert streamlit_markdown("a lone $") == r"a lone \$"
+
+
+def test_maths_does_not_span_a_blank_line_but_may_wrap_a_line():
+    assert streamlit_markdown("$5 now\n\nand 6$") == "\\$5 now\n\nand 6\\$"
+    assert streamlit_markdown("$a +\nb$") == "$a +\nb$"
+
+
+def test_display_maths_and_escapes_are_kept():
+    assert streamlit_markdown("$$W = W_0 + BA$$ costs $5") == r"$$W = W_0 + BA$$ costs \$5"
+    assert streamlit_markdown("$$5") == r"\$\$5"  # unmatched "$$" is literal
+    assert streamlit_markdown(r"$\$5 + x$ and \$5") == r"$\$5 + x$ and \$5"
+
+
+def test_code_is_left_verbatim():
+    text = "Run `echo $HOME $5` then:\n```bash\nexport PRICE=$5\n```\nwhich costs $5"
+    expected = "Run `echo $HOME $5` then:\n```bash\nexport PRICE=$5\n```\nwhich costs \\$5"
+    assert streamlit_markdown(text) == expected
+
+
 def test_short_title_cuts_on_a_word_boundary():
     title = "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models"
     assert short_title(title, 60) == "Chain-of-Thought Prompting Elicits Reasoning in Large…"
