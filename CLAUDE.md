@@ -15,9 +15,16 @@ limits"); `DEMO_MAX_QUESTIONS` per-session limit; Streamlit Community Cloud prep
 at https://research-pilot-yarthik.streamlit.app/; the GitHub repo (Yarthik/research-pilot) is public and
 its full history was scanned for secrets (none found). After going live: `$...$` maths vs currency now
 follows Pandoc's rule (`app/render.py`), and ALL-CAPS PDF titles are title-cased at ingest
-(`loaders.title_case_if_all_caps`; existing indexes keep old titles until re-ingested).
+(`loaders.title_case_if_all_caps`; existing indexes keep old titles until re-ingested). UI polish
+(2026-10-11): visitor-facing copy that adapts to `ALLOW_INGEST`, a "How it works" expander, a blue accent
+in `.streamlit/config.toml` (set under `[theme.light]` and `[theme.dark]`; a plain `[theme]` would drop
+dark mode), a grouped sidebar (brand, Settings, demo limit, linked Documents, footer), plain-English
+agent steps (on by default), and four example questions from the eval set (l1 shortened, m2, re3, u2), each
+checked live. Before the first question the chat input sits inline under the intro: a pinned input
+makes Streamlit scroll to the bottom on load, which hid the heading on phones. Step and footer wording
+lives in `app/render.py`.
 
-**Tests:** 186 collected = 185 fast (`-m "not slow"`) + 1 slow; ruff clean. Update when it changes.
+**Tests:** 193 collected = 192 fast (`-m "not slow"`) + 1 slow; ruff clean. Update when it changes.
 
 **Hosting plan:** the main host is Streamlit Community Cloud (free, ~2.7 GB RAM): entry point
 `app/streamlit_app.py`, Python 3.12, settings as quoted top-level TOML secrets
@@ -57,7 +64,7 @@ so these parts have NOT yet run against the real libraries and need verifying fi
   the DEPLOY.md checklist hasn't been run on it yet). Hugging Face Docker Spaces now need a paid plan, so that path (Stage 6) is kept but is no longer the main one.
 
 Already verified: pure-Python logic (chunking, BM25, RRF, citations, evidence selection, agent
-nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 185 fast tests
+nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 192 fast tests
 (`pytest -m "not slow"`) and 1 slow test (`pytest -m slow`) pass, `ruff` is clean, and
 `requirements.txt` is pinned to the versions that ran. Verified against the real libraries in
 Stage 1: ChromaDB calls in `retrieval/vector_store.py`, FastEmbed embeddings and reranker (slow
