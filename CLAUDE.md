@@ -10,12 +10,11 @@ All code is written. It was developed in a sandbox with no access to PyPI, Huggi
 so these parts have NOT yet run against the real libraries and need verifying first:
 
 - LLM providers other than Groq (only initialised with dummy keys)
-- The FastAPI app against a live server (`/docs`, `/ask/stream`, uploads); its tests pass with fakes
-- The Streamlit UI (`app/streamlit_app.py`), never rendered yet
-- The Dockerfile and docker-compose, never built yet
+- `docker compose up --build` locally (Docker Desktop wasn't running in Stage 5; CI builds the image
+  and smoke-tests the API container)
 
 Already verified: pure-Python logic (chunking, BM25, RRF, citations, evidence selection, agent
-nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 123 fast tests
+nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 133 fast tests
 (`pytest -m "not slow"`) and 1 slow test (`pytest -m slow`) pass, `ruff` is clean, and
 `requirements.txt` is pinned to the versions that ran. Verified against the real libraries in
 Stage 1: ChromaDB calls in `retrieval/vector_store.py`, FastEmbed embeddings and reranker (slow
@@ -49,9 +48,16 @@ vars), judge prompt v2. Both configs score 88% correctness; only 6 questions ret
 improved. Runs checkpoint to `evals/results/answers_<mode>_<n>round.json`, resume on re-run, and stop
 cleanly on 429/quota errors (including ones the agent swallows in its fallbacks). Judge prompt v1
 penalised reference details the question didn't ask for; `python -m evals rejudge` re-grades saved
-answers. Known issue: gpt-oss on Groq sometimes returns JSON text instead of a tool call for
-structured output (`tool_use_failed`, 3 grade steps in the 2-round run); `method="json_schema"` in
-`llm.structured` is the likely fix, but changing it means re-running both configs.
+answers.
+
+Stage 5: `llm.structured` uses Groq's native JSON-schema mode (`method="json_schema"`, strict on
+gpt-oss), falling back to tool calling on a 400; this fixed gpt-oss's intermittent `tool_use_failed`.
+The answer eval predates it. The API was checked end to end against a live server (all endpoints,
+upload/URL ingest/delete, `API_KEY` 401s, `ALLOW_INGEST=false` 403s). The owner checked the
+Streamlit UI by hand (sources, live steps, citations, mode switch, PDF upload/delete, URL ingest,
+retry, out-of-scope question, clear chat). UI text goes through `app/render.py` (LaTeX delimiters,
+currency escaping, word-boundary titles); `.streamlit/config.toml` sets the minimal toolbar and the
+20 MB upload limit.
 
 ## Commands
 
