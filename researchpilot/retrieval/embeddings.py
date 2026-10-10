@@ -6,7 +6,9 @@ from functools import lru_cache
 
 from ..config import get_settings
 
-BATCH_SIZE = 64
+# Memory, not speed, is the limit on small hosts: ONNX Runtime's memory grows with batch size (64 chunks
+# peaked at ~2 GB and kept ~2.8 GB; 8 peaks at ~0.5 GB), while the run time is about the same.
+BATCH_SIZE = 8
 
 
 @lru_cache

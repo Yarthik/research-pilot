@@ -13,10 +13,11 @@ so these parts have NOT yet run against the real libraries and need verifying fi
 - `docker compose up --build` locally: skipped by decision, since Docker Desktop can't run on the
   owner's machine (Windows virtualization is disabled). CI builds the image and smoke-tests the API
   container on every push, which stands in for this check.
-- The live Hugging Face Space (prepared in Stage 6; the owner deploys it with their own token)
+- The live demo on Streamlit Community Cloud (prepared in Stage 7; the owner deploys it from share.streamlit.io).
+  Hugging Face Docker Spaces now need a paid plan, so that path (Stage 6) is kept but is no longer the main one.
 
 Already verified: pure-Python logic (chunking, BM25, RRF, citations, evidence selection, agent
-nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 158 fast tests
+nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 169 fast tests
 (`pytest -m "not slow"`) and 1 slow test (`pytest -m slow`) pass, `ruff` is clean, and
 `requirements.txt` is pinned to the versions that ran. Verified against the real libraries in
 Stage 1: ChromaDB calls in `retrieval/vector_store.py`, FastEmbed embeddings and reranker (slow
@@ -77,6 +78,23 @@ included, as its answer. The API returns 429 (`/ask`) or a typed `rate_limit` st
 shows `render.rate_limit_notice` and doesn't count the question. The daily-vs-minute wording relies on
 Groq's message containing "per day" / (TPD) / (RPD); otherwise the per-minute notice is shown. The
 eval's quota stop recognises the new exception.
+
+Stage 7 (Streamlit Community Cloud prep; ~2.7 GB RAM limit): profiled the real `streamlit run` server
+over a websocket session with an empty index and model cache and settings delivered only through
+`secrets.toml`. The first measurement was 3.25 GB peak, caused by ONNX Runtime: fastembed's default
+batch of 64 peaked near 2 GB and the arena allocator never gave it back. `embeddings.BATCH_SIZE` and
+`reranker.BATCH_SIZE` are now 8 (vectors are bit-identical, so the retrieval eval is unchanged;
+cold-start ingest went from 145 s to 91 s); peak is now 0.68 GB, 0.95 GB with the reranker selected.
+Don't raise those batch sizes without re-measuring (`tests/test_runtime_env.py` pins them). Streamlit
+promotes root-level string/int/float secrets to os.environ at server start but NOT booleans, so
+`app/runtime_env.py` copies the rest (`ALLOW_INGEST = false` would otherwise leave uploads on for a
+public demo); the docs still tell the owner to quote every value. Also added: an old-system-SQLite
+guard for ChromaDB (swap in `pysqlite3` if installed, else a clear error), and a fallback to a temp
+folder when the index folder isn't writable. The friendly Groq-quota message was verified end to end
+by pointing the real Groq SDK at a local server that returns HTTP 429. Not verifiable from here: the
+Community Cloud host itself (its SQLite version, CPU count, folder permissions); `docs/DEPLOY.md` has
+the troubleshooting for each. Optional follow-up for a faster cold start: ship the sample corpus's
+chunks and vectors as a snapshot instead of downloading and embedding five PDFs on every wake-up.
 
 ## Commands
 

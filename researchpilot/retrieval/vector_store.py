@@ -2,10 +2,33 @@
 
 from __future__ import annotations
 
+import logging
+import tempfile
 from pathlib import Path
 
 from ..config import get_settings
 from ..ingestion.chunking import Chunk
+
+log = logging.getLogger(__name__)
+
+
+def writable_dir(path: Path) -> Path:
+    """`path` if the index can be stored there, else a folder under the system temp directory.
+
+    Some hosts mount the app's folder read-only. A temp index is lost on restart, but the app keeps
+    working (and re-ingests the sample papers when AUTO_INGEST_SAMPLES is set).
+    """
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".write-test"
+        probe.touch()
+        probe.unlink()
+        return path
+    except OSError as exc:
+        fallback = Path(tempfile.gettempdir()) / "researchpilot" / path.name
+        log.warning("cannot write the index to %s (%s); using %s, which is lost on restart", path, exc, fallback)
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
 
 
 def summarize_sources(metadatas: list[dict]) -> list[dict]:
@@ -24,8 +47,7 @@ class VectorStore:
         from chromadb.config import Settings as ChromaSettings
 
         s = get_settings()
-        path = Path(path) if path else Path(s.data_dir) / "chroma"
-        path.mkdir(parents=True, exist_ok=True)
+        path = writable_dir(Path(path) if path else Path(s.data_dir) / "chroma")
         self.client = chromadb.PersistentClient(path=str(path), settings=ChromaSettings(anonymized_telemetry=False))
         self.collection = self.client.get_or_create_collection(
             collection_name or s.collection_name,

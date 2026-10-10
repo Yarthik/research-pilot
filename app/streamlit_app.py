@@ -20,6 +20,9 @@ for path in (ROOT, ROOT / "app"):  # importable without `pip install -e .`
 import streamlit as st  # noqa: E402
 from backend import get_backend  # noqa: E402
 from render import GITHUB_URL, rate_limit_notice, short_title, streamlit_markdown  # noqa: E402
+from runtime_env import ensure_modern_sqlite, load_streamlit_secrets  # noqa: E402
+
+load_streamlit_secrets(st.secrets)  # hosted apps keep settings in secrets; this also covers TOML booleans
 
 from researchpilot import __version__  # noqa: E402
 from researchpilot.cli import read_sources_file  # noqa: E402
@@ -42,6 +45,12 @@ MODE_LABELS = {
 STEP_ICONS = {"plan": "🧭", "retrieve": "🔎", "grade": "⚖️", "generate": "✍️"}
 
 st.set_page_config(page_title="ResearchPilot", page_icon="🧭", layout="wide")
+
+try:
+    ensure_modern_sqlite()  # before anything imports chromadb
+except RuntimeError as exc:
+    st.error(str(exc))
+    st.stop()
 
 
 @st.cache_resource

@@ -112,3 +112,17 @@ def test_rate_limit_shows_a_friendly_message_not_the_raw_error(
     at.run()
     assert any(expected in w.value for w in at.warning)
     assert not at.chat_input[0].disabled
+
+
+def test_a_boolean_secret_makes_the_page_read_only(loaded_retriever, monkeypatch):
+    # Streamlit Community Cloud does not copy TOML booleans (ALLOW_INGEST = false) into the environment.
+    monkeypatch.setenv("ALLOW_INGEST", "x")
+    monkeypatch.delenv("ALLOW_INGEST")  # registers the cleanup for the variable the app is about to set
+    at = _app(monkeypatch)
+    at.secrets["ALLOW_INGEST"] = False
+    at.secrets["DEMO_MAX_QUESTIONS"] = "3"
+    at.run()
+    assert not at.exception
+    assert any("fixed set of documents" in i.value for i in at.sidebar.info)
+    assert not at.get("file_uploader")
+    assert any("3 of 3 left" in c.value for c in at.sidebar.caption)

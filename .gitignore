@@ -13,3 +13,6 @@ htmlcov/
 storage/
 .cache/
 .DS_Store
+
+# Streamlit secrets hold real keys: keep only the .example file in git
+.streamlit/secrets.toml

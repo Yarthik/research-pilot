@@ -6,7 +6,7 @@
 
 **An agentic research assistant over your own documents.** Ingest PDFs and web pages, ask questions, and get answers with inline citations. A LangGraph agent plans its searches, checks whether what it found is enough, and searches again when it isn't.
 
-**Live demo:** _add your Hugging Face Space link here_ · **API docs:** `/docs` on any running API
+**Live demo:** _add your Streamlit Community Cloud link here_ · **API docs:** `/docs` on any running API
 
 ## Highlights
 
@@ -14,7 +14,7 @@
 - **Hybrid retrieval**: BM25 (implemented from scratch) + dense vectors (ChromaDB), merged with Reciprocal Rank Fusion; optional cross-encoder reranking, benchmarked against plain fusion
 - **Grounded answers**: structured output, inline citations validated against the sources, and an explicit "not in the documents" path
 - **Evaluation harness**: retrieval benchmark across four retrieval modes, and LLM-judged correctness, faithfulness, abstention and a retry ablation, written straight into this README
-- **Production shape**: FastAPI service (streaming endpoint, API-key auth, read-only mode), Streamlit UI, Docker + compose, Hugging Face Spaces deployment, GitHub Actions CI
+- **Production shape**: FastAPI service (streaming endpoint, API-key auth, read-only mode), Streamlit UI, Docker + compose, free hosting on Streamlit Community Cloud, GitHub Actions CI
 - **Any LLM**: Groq, OpenAI, Anthropic, Google or local Ollama through one setting; embeddings and reranking run locally on CPU for free
 
 ## How it works
@@ -108,9 +108,9 @@ Set `API_KEY` to require an `X-API-Key` header, and `ALLOW_INGEST=false` to make
 docker compose up --build      # UI on :8501, API on :8000, sample papers ingested on first start
 ```
 
-The compose setup runs the UI and API as separate services; the UI talks to the API over HTTP, and the API owns the document index. For a single container (what Hugging Face Spaces runs): `docker build -t researchpilot . && docker run -p 7860:7860 --env-file .env researchpilot`.
+The compose setup runs the UI and API as separate services; the UI talks to the API over HTTP, and the API owns the document index. For a single container (the UI and agent in one process): `docker build -t researchpilot . && docker run -p 7860:7860 --env-file .env researchpilot`.
 
-**Deploying the live demo** to a free Hugging Face Space takes about five minutes: see [docs/DEPLOY.md](docs/DEPLOY.md).
+**Deploying the live demo** is free on [Streamlit Community Cloud](https://share.streamlit.io): connect the GitHub repo, set `app/streamlit_app.py` as the entry point and paste a few secrets, about five minutes of clicking. The app was profiled for that host's ~2.7 GB memory limit (it peaks below 1 GB, see Design decisions). Steps, secrets and the Hugging Face Docker Space alternative (now a paid feature) are in [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Evaluation
 
@@ -199,6 +199,7 @@ Example models: OpenAI `gpt-4o-mini`, Anthropic `claude-haiku-4-5-20251001`, Oll
 - **Cross-encoder reranking is optional, not the default.** In `hybrid_rerank`, BM25 and the bi-encoder cast a wide net (20 candidates each) and a cross-encoder reads each (question, passage) pair to keep the best 5. That is the textbook precision step, but on this corpus it lowered MRR with all three rerankers tried and cost 1–6 s per query on CPU (see Findings). Plain RRF is therefore the default, and reranking stays selectable per request; it's worth re-checking on a different corpus.
 - **Choosing evidence across retry rounds.** The agent can find more chunks than fit in the answer prompt, and keeping the first N would silently discard everything a retry found. In `hybrid_rerank` the whole pool is re-scored against the original question by the cross-encoder. In the other modes, results are interleaved by rank across sub-queries and the slots are split between earlier rounds and the newest one, so neither a retry nor a sub-query is dropped wholesale. Both behaviours have regression tests.
 - **Bounded loop.** At most two retrieval rounds, and the grader is skipped on the last round, saving an LLM call when its verdict couldn't change anything.
+- **Sized for a small host.** Profiling a cold start on the real Streamlit server showed 3.2 GB of memory, over the ~2.7 GB free-hosting limit. The cause was ONNX Runtime: embedding in batches of 64 peaked near 2 GB and the allocator never gave it back. Batches of 8 produce bit-identical vectors, peak at about 0.5 GB, and cut the cold-start ingest from 145 s to 91 s; the whole app now peaks at about 0.7 GB (0.95 GB with the reranker switched on). A test pins the batch sizes.
 - **Graceful degradation.** If a model fails structured output, each step has a fallback (raw question as the query, plain-text answer). Configuration problems such as a missing API key, and provider rate limits or quota, are the exception: retrying or guessing can't help, so they surface as a clear error instead of a degraded answer. The UI turns a rate limit into a friendly "try again later" message and the API returns a 429.
 - **Citations are checked, not trusted.** Citation numbers are parsed from the answer text (`[1]`, `[2][3]`, `[1, 4]`, `[2-4]`) and validated against the evidence list; invalid ones are reported in the trace and counted by the eval.
 - **Testable by design.** The LLM, embeddings, vector store and reranker are injectable, so the test suite runs the real agent graph, API and UI backends without API keys or model downloads.
@@ -218,6 +219,7 @@ researchpilot/
 app/                       Streamlit UI + local/HTTP backends
 evals/                     dataset, metrics, LLM judge, runner, README table updater
 tests/                     unit + integration tests with fakes (no keys, no downloads)
+app/, .streamlit/         Streamlit UI and its config (Community Cloud reads this folder)
 deploy/, docs/, scripts/   Hugging Face Space config, deployment guide, helper scripts
 ```
 
