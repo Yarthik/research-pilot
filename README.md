@@ -6,7 +6,7 @@
 
 **An agentic research assistant over your own documents.** Ingest PDFs and web pages, ask questions, and get answers with inline citations. A LangGraph agent plans its searches, checks whether what it found is enough, and searches again when it isn't.
 
-**Live demo:** _add your Streamlit Community Cloud link here_ · **API docs:** `/docs` on any running API
+**Live demo: [research-pilot-yarthik.streamlit.app](https://research-pilot-yarthik.streamlit.app/)** (if it has been asleep, waking it and loading the papers takes a few minutes) · **API docs:** `/docs` on any running API
 
 ## Highlights
 
@@ -216,11 +216,10 @@ researchpilot/
 ├── tools/web_search.py    optional Tavily search
 ├── api/                   FastAPI app and request/response schemas
 └── cli.py                 command-line interface
-app/                       Streamlit UI + local/HTTP backends
+app/, .streamlit/          Streamlit UI, local/HTTP backends and UI config (Community Cloud reads both)
 evals/                     dataset, metrics, LLM judge, runner, README table updater
 tests/                     unit + integration tests with fakes (no keys, no downloads)
-app/, .streamlit/         Streamlit UI and its config (Community Cloud reads this folder)
-deploy/, docs/, scripts/   Hugging Face Space config, deployment guide, helper scripts
+docs/, deploy/, scripts/   deployment guide, optional Hugging Face Space config, helper scripts
 ```
 
 ## Development

@@ -1,5 +1,7 @@
 # Deploying ResearchPilot
 
+The public demo runs on Streamlit Community Cloud (Option 1): <https://research-pilot-yarthik.streamlit.app/>
+
 | Option | Cost | Best for |
 | --- | --- | --- |
 | [1. Streamlit Community Cloud](#option-1-streamlit-community-cloud-free-the-public-demo) | Free | The public demo link (recommended) |

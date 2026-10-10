@@ -11,22 +11,25 @@ fixes and pinned versions; clean PDF titles/text; retrieval eval (default `hybri
 answer eval on all 29 questions (1 vs 2 rounds, qwen judge); Groq JSON-schema structured output; API
 and Streamlit UI verified end to end; friendly rate-limit handling (`LLMRateLimitError`, see "Rate
 limits"); `DEMO_MAX_QUESTIONS` per-session limit; Streamlit Community Cloud prep including the memory fix
-(cold-start peak 3.25 GB -> 0.68 GB) and the secrets/SQLite/temp-folder guards.
+(cold-start peak 3.25 GB -> 0.68 GB) and the secrets/SQLite/temp-folder guards. Deployed (2026-10-11)
+at https://research-pilot-yarthik.streamlit.app/; the GitHub repo (Yarthik/research-pilot) is public and
+its full history was scanned for secrets (none found). After going live: `$...$` maths vs currency now
+follows Pandoc's rule (`app/render.py`), and ALL-CAPS PDF titles are title-cased at ingest
+(`loaders.title_case_if_all_caps`; existing indexes keep old titles until re-ingested).
 
-**Tests:** 170 collected = 169 fast (`-m "not slow"`) + 1 slow; ruff clean. Update when it changes.
+**Tests:** 186 collected = 185 fast (`-m "not slow"`) + 1 slow; ruff clean. Update when it changes.
 
 **Hosting plan:** the main host is Streamlit Community Cloud (free, ~2.7 GB RAM): entry point
 `app/streamlit_app.py`, Python 3.12, settings as quoted top-level TOML secrets
-(`.streamlit/secrets.toml.example`; steps in `docs/DEPLOY.md`). It is NOT deployed yet; the owner does that
-from share.streamlit.io. The Hugging Face Docker Space (`scripts/deploy_hf_space.sh`) now needs a paid
-plan and stays optional, as do Docker Compose and any container host.
+(`.streamlit/secrets.toml.example`; steps in `docs/DEPLOY.md`). Live at
+https://research-pilot-yarthik.streamlit.app/ (linked at the top of the README); it redeploys on every
+push to `main`. The Hugging Face Docker Space (`scripts/deploy_hf_space.sh`) now needs a paid plan and
+stays optional, as do Docker Compose and any container host.
 
 **Open follow-ups:**
-1. Deploy, then fill in the README demo link (placeholder: "add your Streamlit Community Cloud link
-   here") and run the checklist at the end of `docs/DEPLOY.md` on the live app (the host's SQLite version,
-   CPU count and folder permissions are untested).
-2. The GitHub repo looked private (the repo page and CI badge returned 404 when signed out) and CI status
-   was not checked. Employers need it public; confirm the Actions run is green.
+1. Run the checklist at the end of `docs/DEPLOY.md` on the live app (the host's SQLite version, CPU
+   count and folder permissions were untested before deploying).
+2. Confirm the GitHub Actions run is green now that the repo is public.
 3. Pointless retries on out-of-scope questions: the grader prompt says not to search again when the
    documents clearly don't cover a topic, but gpt-oss still rewrites the query (3 of the 6 retries in the
    2-round eval were unanswerable questions, e.g. the FIFA one). It costs a round of latency and LLM calls.
@@ -50,11 +53,11 @@ so these parts have NOT yet run against the real libraries and need verifying fi
 - `docker compose up --build` locally: skipped by decision, since Docker Desktop can't run on the
   owner's machine (Windows virtualization is disabled). CI builds the image and smoke-tests the API
   container on every push, which stands in for this check.
-- The live demo on Streamlit Community Cloud (prepared in Stage 7; the owner deploys it from share.streamlit.io).
-  Hugging Face Docker Spaces now need a paid plan, so that path (Stage 6) is kept but is no longer the main one.
+- The live demo on Streamlit Community Cloud (prepared in Stage 7, deployed by the owner on 2026-10-11;
+  the DEPLOY.md checklist hasn't been run on it yet). Hugging Face Docker Spaces now need a paid plan, so that path (Stage 6) is kept but is no longer the main one.
 
 Already verified: pure-Python logic (chunking, BM25, RRF, citations, evidence selection, agent
-nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 169 fast tests
+nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 185 fast tests
 (`pytest -m "not slow"`) and 1 slow test (`pytest -m slow`) pass, `ruff` is clean, and
 `requirements.txt` is pinned to the versions that ran. Verified against the real libraries in
 Stage 1: ChromaDB calls in `retrieval/vector_store.py`, FastEmbed embeddings and reranker (slow
@@ -174,4 +177,4 @@ docker compose up --build              # can't run on the owner's machine (no vi
 4. API works: `/docs`, `/ask`, `/ask/stream`, upload, delete, API-key and read-only modes.
 5. Retrieval eval runs and its table is in the README; the answer eval runs on a subset.
 6. `docker compose up --build` works and the image builds (checked by CI only; see Commands).
-7. Pushed to GitHub with CI green; README demo-link placeholder filled in once the app is deployed.
+7. Pushed to the public GitHub repo with CI green; the README links the live demo.
