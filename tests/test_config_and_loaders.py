@@ -2,7 +2,13 @@ import pytest
 from pydantic import ValidationError
 
 from researchpilot.config import Settings, get_settings, reset_settings
-from researchpilot.ingestion.loaders import LoaderError, clean_pdf_text, load_pdf_bytes, load_source
+from researchpilot.ingestion.loaders import (
+    LoaderError,
+    clean_pdf_text,
+    load_pdf_bytes,
+    load_source,
+    title_case_if_all_caps,
+)
 
 
 # --------------------------------------------------------------------------- config
@@ -90,7 +96,33 @@ def test_pdf_title_is_large_font_run_with_small_caps_rejoined():
         + " ET"
     )
     doc = load_pdf_bytes(make_pdf([], streams=[stream]), "react.pdf")
-    assert doc.title == "REACT: LOW-RANK LANGUAGE"
+    assert doc.title == "ReAct: Low-Rank Language"  # rejoined "REACT: LOW-RANK LANGUAGE", then title-cased
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [  # the two sample papers whose PDFs give ALL-CAPS titles
+        ("LORA: LOW-RANK ADAPTATION OF LARGE LANGUAGE MODELS", "LoRA: Low-Rank Adaptation of Large Language Models"),
+        (
+            "REACT: SYNERGIZING REASONING AND ACTING IN LANGUAGE MODELS",
+            "ReAct: Synergizing Reasoning and Acting in Language Models",
+        ),
+        # acronyms without vowels or with digits, Roman numerals, minor words after a colon / first
+        ("A SURVEY OF LLMS FOR NLP: THE STATE-OF-THE-ART", "A Survey of LLMs for NLP: The State-of-the-Art"),
+        ("SCALING GPT-3 TO 2D CNN MODELS, PART II", "Scaling GPT-3 to 2D CNN Models, Part II"),
+        ("THE MODEL'S ÉTUDE IN RHYTHM", "The Model's Étude in Rhythm"),
+    ],
+)
+def test_all_caps_titles_become_title_case(raw, expected):
+    assert title_case_if_all_caps(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "title",
+    ["Attention Is All You Need", "LoRA: Low-rank adaptation", "BERT", "GPT-4 REPORT", "", "2024 / 2025"],
+)
+def test_titles_that_are_not_all_caps_or_are_short_are_unchanged(title):
+    assert title_case_if_all_caps(title) == title
 
 
 def test_pdf_file_and_text_file(tmp_path):

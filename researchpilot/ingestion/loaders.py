@@ -93,6 +93,42 @@ def _title_from_spans(spans: list[tuple[float, float, str]]) -> str | None:
     return title[:200] or None
 
 
+# Spellings that case alone can't recover from an ALL-CAPS title.
+KNOWN_TERMS = {
+    term.upper(): term
+    for term in (
+        "LoRA", "QLoRA", "ReAct", "BERT", "RoBERTa", "LLaMA", "GPT", "RAG", "LLMs", "AI", "QA", "BLEU",
+        "ImageNet", "GitHub", "PyTorch", "TensorFlow", "arXiv",
+    )
+}  # fmt: skip
+MINOR_WORDS = {"a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "into", "nor", "of", "on", "or"}
+MINOR_WORDS |= {"over", "per", "the", "to", "via", "vs", "with"}
+
+
+def title_case_if_all_caps(title: str) -> str:
+    """Turn an ALL-CAPS title ("LORA: LOW-RANK ADAPTATION OF ...") into title case.
+
+    Known terms get their usual spelling ("LoRA"); words with digits or without vowels ("GPT-3",
+    "NLP", "CNN") and Roman numerals stay upper-case, as they are likely acronyms. Titles that have
+    any lower-case letter, or fewer than three words, are returned unchanged.
+    """
+    if title != title.upper() or len(re.findall(r"[^\W\d_]{2,}", title)) < 3:
+        return title
+
+    def fix(match: re.Match) -> str:
+        word = match.group(0)
+        starts_phrase = not title[: match.start()].strip() or title[: match.start()].rstrip()[-1] in ":?!.—–"
+        if word in KNOWN_TERMS:
+            return KNOWN_TERMS[word]
+        if re.search(r"\d", word) or not re.search(r"[AEIOUY]", word) or re.fullmatch(r"[IVX]{2,}", word):
+            return word
+        if word.lower() in MINOR_WORDS and not starts_phrase:
+            return word.lower()
+        return word.capitalize()
+
+    return re.sub(r"[^\W_]+(?:['’][^\W_]+)*", fix, title)
+
+
 def _read_pdf(data: bytes) -> tuple[list[tuple[int | None, str]], str | None]:
     from pypdf import PdfReader
     from pypdf.errors import PdfReadError
@@ -129,7 +165,7 @@ def _read_pdf(data: bytes) -> tuple[list[tuple[int | None, str]], str | None]:
     if not title and pages:
         first_line = next((line.strip() for line in pages[0][1].splitlines() if line.strip()), "")
         title = first_line[:120] or None
-    return pages, title
+    return pages, title_case_if_all_caps(title) if title else None
 
 
 def load_pdf_bytes(data: bytes, source: str) -> Document:
