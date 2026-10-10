@@ -4,6 +4,43 @@ Portfolio project: an agentic RAG assistant (LangGraph agent, hybrid BM25 + vect
 RRF and a cross-encoder reranker, FastAPI, Streamlit, evaluation harness). The owner will show it
 to employers, so it must run cleanly end to end. See README.md for the full description.
 
+## Where things stand (read first)
+
+**Done** (details in the stage notes below; everything is committed and pushed to `main`): real-library
+fixes and pinned versions; clean PDF titles/text; retrieval eval (default `hybrid`, reranker opt-in);
+answer eval on all 29 questions (1 vs 2 rounds, qwen judge); Groq JSON-schema structured output; API
+and Streamlit UI verified end to end; friendly rate-limit handling (`LLMRateLimitError`, see "Rate
+limits"); `DEMO_MAX_QUESTIONS` per-session limit; Streamlit Community Cloud prep including the memory fix
+(cold-start peak 3.25 GB -> 0.68 GB) and the secrets/SQLite/temp-folder guards.
+
+**Tests:** 170 collected = 169 fast (`-m "not slow"`) + 1 slow; ruff clean. Update when it changes.
+
+**Hosting plan:** the main host is Streamlit Community Cloud (free, ~2.7 GB RAM): entry point
+`app/streamlit_app.py`, Python 3.12, settings as quoted top-level TOML secrets
+(`.streamlit/secrets.toml.example`; steps in `docs/DEPLOY.md`). It is NOT deployed yet; the owner does that
+from share.streamlit.io. The Hugging Face Docker Space (`scripts/deploy_hf_space.sh`) now needs a paid
+plan and stays optional, as do Docker Compose and any container host.
+
+**Open follow-ups:**
+1. Deploy, then fill in the README demo link (placeholder: "add your Streamlit Community Cloud link
+   here") and run the checklist at the end of `docs/DEPLOY.md` on the live app (the host's SQLite version,
+   CPU count and folder permissions are untested).
+2. The GitHub repo looked private (the repo page and CI badge returned 404 when signed out) and CI status
+   was not checked. Employers need it public; confirm the Actions run is green.
+3. Pointless retries on out-of-scope questions: the grader prompt says not to search again when the
+   documents clearly don't cover a topic, but gpt-oss still rewrites the query (3 of the 6 retries in the
+   2-round eval were unanswerable questions, e.g. the FIFA one). It costs a round of latency and LLM calls.
+   Ideas: skip the retry when the new queries nearly repeat the old ones, or tighten the grader prompt;
+   measure with the answer eval.
+4. `l5` (how LoRA initialises A and B) is never retrieved by any mode, so the agent honestly abstains. The
+   passage exists (page 4), but pypdf glues maths letters to words ("forB") and BM25 has no stemming.
+5. BM25 has no stemming. Snowball stemming was tried and reverted (hybrid hit rate 96% -> 92%, lower MRR);
+   retry only with a larger eval set.
+6. Optional: ship the sample corpus's chunks and vectors as a snapshot, so a cold start or wake-up
+   doesn't download and embed five PDFs (about 90 s here, 2-4 min expected on the free tier).
+7. Minor: a rate-limited visitor waits ~13 s before the friendly message (3 agent retries x 3 SDK
+   retries). The daily-vs-per-minute wording depends on Groq's message text.
+
 ## Status
 
 All code is written. It was developed in a sandbox with no access to PyPI, Hugging Face or arXiv,
@@ -110,10 +147,17 @@ uvicorn researchpilot.api.main:app --port 8000
 python -m evals retrieval --update-readme
 python -m evals answers --rounds 1 --delay 30          # then --rounds 2 (another day if quota is short)
 python -m evals answers --compare-retry --update-readme # combine the two saved runs, no LLM calls
-docker compose up --build
+docker compose up --build              # can't run on the owner's machine (no virtualization); CI covers it
 ```
 
 ## Conventions
+
+- Environment: Windows + Git Bash, venv in `.venv` (Python 3.12.4), so call `.venv/Scripts/python.exe -m ...`.
+  `.gitattributes` forces LF for code files; `core.fileMode` is false locally.
+- Never open or print `.env` (it holds the Groq key; the app loads it itself). Pass other settings as
+  environment variables, and never write a real key into a file.
+- Groq free tier: about 8K tokens/min and 200K tokens/day per model. A question costs 2-3 LLM calls, the
+  answer eval about 4-5 per question per config, so keep LLM use modest and run evals one config per day.
 
 - Fix the code to match the real library APIs; keep the architecture and public behaviour.
 - Tests must not need API keys or downloads (except `-m slow`); use the fakes in `tests/conftest.py`.
@@ -129,5 +173,5 @@ docker compose up --build
 3. Streamlit UI works: sources list, upload, URL ingest, live agent steps, citations, mode switch.
 4. API works: `/docs`, `/ask`, `/ask/stream`, upload, delete, API-key and read-only modes.
 5. Retrieval eval runs and its table is in the README; the answer eval runs on a subset.
-6. `docker compose up --build` works and the image builds.
-7. Pushed to GitHub with CI green; README demo-link placeholder filled in.
+6. `docker compose up --build` works and the image builds (checked by CI only; see Commands).
+7. Pushed to GitHub with CI green; README demo-link placeholder filled in once the app is deployed.
