@@ -19,32 +19,61 @@ for path in (ROOT, ROOT / "app"):  # importable without `pip install -e .`
 
 import streamlit as st  # noqa: E402
 from backend import get_backend  # noqa: E402
-from render import GITHUB_URL, rate_limit_notice, short_title, streamlit_markdown  # noqa: E402
+from render import (  # noqa: E402
+    GITHUB_URL,
+    answer_footer,
+    describe_step,
+    model_label,
+    plural,
+    rate_limit_notice,
+    short_title,
+    streamlit_markdown,
+)
 from runtime_env import ensure_modern_sqlite, load_streamlit_secrets  # noqa: E402
 
 load_streamlit_secrets(st.secrets)  # hosted apps keep settings in secrets; this also covers TOML booleans
 
 from researchpilot import __version__  # noqa: E402
 from researchpilot.cli import read_sources_file  # noqa: E402
-from researchpilot.config import RETRIEVAL_MODES, get_settings  # noqa: E402
+from researchpilot.config import get_settings  # noqa: E402
+from researchpilot.ingestion.loaders import title_case_if_all_caps  # noqa: E402
 from researchpilot.llm import LLMConfigError, LLMRateLimitError  # noqa: E402
 
 SAMPLE_FILE = ROOT / "data" / "sample_sources.txt"
+ICON = ":material/travel_explore:"
+USER_AVATAR = ":material/person:"
+EVAL_URL = f"{GITHUB_URL}#evaluation"
+# One per kind of behaviour, from the eval set (evals/dataset.jsonl: l1 shortened, m2, re3, u2).
 EXAMPLES = [
-    "How does LoRA reduce the number of trainable parameters?",
-    "Compare ReAct and chain-of-thought prompting.",
-    "What are RAG-Sequence and RAG-Token, and how do they differ?",
-    "Why does the Transformer scale dot products by 1/sqrt(d_k)?",
+    ("One paper", "How does LoRA reduce the number of trainable parameters?"),
+    ("Compares two papers", "How do RAG and LoRA differ in the way they adapt a pre-trained language model?"),
+    (
+        "May search twice",
+        "What tool does ReAct use for knowledge-intensive tasks like HotpotQA, and which actions does it support?",
+    ),
+    ("Not in the papers", "What learning rate was used to train GPT-4?"),
 ]
-MODE_LABELS = {
-    "hybrid_rerank": "Hybrid + cross-encoder rerank (slower)",
-    "hybrid": "Hybrid: BM25 + vector, RRF (default)",
-    "vector": "Vector only",
-    "bm25": "BM25 only",
+MODE_LABELS = {  # selectbox order
+    "hybrid": "Hybrid (recommended)",
+    "hybrid_rerank": "Hybrid + reranker",
+    "bm25": "Keyword (BM25)",
+    "vector": "Semantic (vector)",
 }
-STEP_ICONS = {"plan": "🧭", "retrieve": "🔎", "grade": "⚖️", "generate": "✍️"}
+MODE_HELP = {
+    "hybrid": "keyword and semantic search, merged by rank fusion; the best accuracy in the evaluation",
+    "hybrid_rerank": "hybrid, then a cross-encoder re-reads the top passages; about 1 s slower, not better here",
+    "bm25": "exact word matches; good for names and numbers",
+    "vector": "matches meaning, even when the wording differs",
+}
+STEP_ICONS = {
+    "plan": ":material/checklist:",
+    "retrieve": ":material/search:",
+    "grade": ":material/fact_check:",
+    "generate": ":material/edit_note:",
+}
+NUMBER_WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
 
-st.set_page_config(page_title="ResearchPilot", page_icon="🧭", layout="wide")
+st.set_page_config(page_title="ResearchPilot", page_icon=ICON, layout="wide")
 
 try:
     ensure_modern_sqlite()  # before anything imports chromadb
@@ -59,28 +88,8 @@ def backend():
 
 
 # --------------------------------------------------------------------------- helpers
-def describe_step(event: dict) -> str:
-    step = event.get("step")
-    seconds = f" ({event.get('seconds', 0)}s)"
-    if step == "plan":
-        queries = event.get("queries", [])
-        web = " + web search" if event.get("needs_web") else ""
-        return f"Planned {len(queries)} search(es){web}: {'; '.join(queries)}{seconds}"
-    if step == "retrieve":
-        web = f", {event['new_web_results']} web result(s)" if event.get("new_web_results") else ""
-        found = f"{event.get('new_chunks', 0)} new chunk(s){web}"
-        return f"Round {event.get('round')}: {found}, {event.get('evidence', 0)} in context{seconds}"
-    if step == "grade":
-        if event.get("skipped"):
-            return f"Grader skipped (no rounds left){seconds}"
-        if event.get("sufficient"):
-            return f"Context is sufficient{seconds}"
-        if event.get("new_queries"):
-            return f"Missing: {event.get('missing')} → searching again: {'; '.join(event['new_queries'])}{seconds}"
-        return f"Context incomplete: {event.get('missing')}{seconds}"
-    if step == "generate":
-        return f"Answered from {event.get('sources')} source(s), cited {len(event.get('cited', []))}{seconds}"
-    return str(event)
+def display_title(title: str, limit: int = 90) -> str:
+    return short_title(title_case_if_all_caps(title or ""), limit)
 
 
 def render_citations(citations: list[dict]) -> None:
@@ -89,36 +98,39 @@ def render_citations(citations: list[dict]) -> None:
     st.markdown("**Sources**")
     for c in citations:
         page = f", p. {c['page']}" if c.get("page") else ""
-        icon = "🌐" if c.get("origin") == "web" else "📄"
-        with st.expander(f"[{c['n']}] {icon} {short_title(c['title'], 90)}{page}"):
+        icon = ":material/public:" if c.get("origin") == "web" else ":material/description:"
+        with st.expander(f"[{c['n']}] {display_title(c['title'])}{page}", icon=icon):
             st.caption(c["source"])
             st.markdown(streamlit_markdown(c["text"]))
 
 
-def render_result(result: dict, show_trace: bool) -> None:
+def render_steps(trace: list[dict]) -> None:
+    with st.expander(f"Agent steps ({len(trace)})", icon=":material/route:"):
+        for step in trace:
+            st.markdown(f"{STEP_ICONS.get(step.get('step'), '•')} {describe_step(step)}")
+
+
+def render_result(result: dict, show_steps: bool) -> None:
+    if show_steps and result.get("trace"):
+        render_steps(result["trace"])
     if result.get("insufficient"):
-        st.warning("The documents don't fully answer this question.", icon="⚠️")
+        covered = "don't fully answer" if result.get("citations") else "don't cover"
+        st.warning(f"The documents {covered} this question.", icon=":material/info:")
     st.markdown(streamlit_markdown(result["answer"]))
     render_citations(result.get("citations", []))
-    st.caption(
-        f"{result.get('seconds', 0)}s · {result.get('round') or 0} retrieval round(s) · "
-        f"{result.get('evidence_count', 0)} chunks in context"
-    )
-    if show_trace and result.get("trace"):
-        with st.expander("Agent trace"):
-            st.json(result["trace"])
+    st.caption(answer_footer(result))
 
 
 def show_report(status, report: dict) -> None:
     for item in report["ingested"]:
-        status.write(f"✅ {short_title(item['title'])} ({item['chunks']} chunks)")
+        status.write(f":material/check: {display_title(item['title'])} ({plural(item['chunks'], 'passage')})")
     for item in report["failed"]:
-        status.write(f"❌ {item['source']}: {item['error']}")
-    status.update(label=f"Ingested {len(report['ingested'])}, failed {len(report['failed'])}", state="complete")
+        status.write(f":material/close: {item['source']}: {item['error']}")
+    status.update(label=f"Added {len(report['ingested'])}, failed {len(report['failed'])}", state="complete")
 
 
 def ingest_urls(urls: list[str]) -> None:
-    with st.status(f"Ingesting {len(urls)} source(s)...", expanded=True) as status:
+    with st.status(f"Adding {plural(len(urls), 'source')}...", expanded=True) as status:
         report = backend().ingest_urls(urls, on_progress=lambda s, i, n: status.write(f"[{i}/{n}] {s}"))
         show_report(status, report)
 
@@ -134,6 +146,39 @@ def auto_ingest_samples() -> bool:
     present = {s["source"] for s in backend().sources()}
     missing = [url for url in read_sources_file(str(SAMPLE_FILE)) if url not in present]
     return not missing or not backend().ingest_urls(missing)["failed"]
+
+
+def page_heading(sources: list[dict], can_edit: bool) -> str:
+    if can_edit:
+        return "Ask questions about your documents"
+    samples = set(read_sources_file(str(SAMPLE_FILE))) if SAMPLE_FILE.exists() else set()
+    if sources and all(s["source"] in samples for s in sources):
+        count = len(sources)
+        number = NUMBER_WORDS[count] if count < len(NUMBER_WORDS) else str(count)
+        return f"Ask questions about {number} landmark AI {'paper' if count == 1 else 'papers'}"
+    return "Ask questions about these documents"
+
+
+def how_it_works(mode: str, max_rounds: int) -> str:
+    retry = (
+        f"If something is missing, it rewrites the searches and looks again (up to {plural(max_rounds, 'round')})."
+        if max_rounds > 1
+        else "Retrying is switched off, so it answers after one search round."
+    )
+    modes = "\n".join(f"- **{label}**: {MODE_HELP[m]}" for m, label in MODE_LABELS.items())
+    return f"""
+1. **Plan**: splits your question into one to three focused searches.
+2. **Retrieve**: finds the most relevant passages in the documents.
+3. **Grade**: checks whether those passages are enough to answer.
+4. **Retry or answer**: {retry} Then it answers, citing the passages it used, or says the documents don't cover it.
+
+**Search methods** (choose one under Settings in the sidebar):
+
+{modes}
+
+Currently selected: **{MODE_LABELS.get(mode, mode)}**. How well each method works is measured in the
+[evaluation]({EVAL_URL}).
+"""
 
 
 # --------------------------------------------------------------------------- startup
@@ -154,80 +199,98 @@ if "questions_asked" not in st.session_state:
     st.session_state.questions_asked = 0  # not reset by "Clear chat", so the demo limit holds
 
 # Optional per-session cap for a public demo (DEMO_MAX_QUESTIONS); None means unlimited.
-question_limit = get_settings().demo_max_questions
+settings = get_settings()
+question_limit = settings.demo_max_questions
 questions_left = None if question_limit is None else max(question_limit - st.session_state.questions_asked, 0)
 limit_reached = questions_left == 0
+can_edit = bool(info.get("ingest_enabled"))
 
 # --------------------------------------------------------------------------- sidebar
 with st.sidebar:
-    st.title("🧭 ResearchPilot")
-    st.caption(f"v{__version__} · LLM `{info['llm_provider']}/{info['llm_model']}` · {backend().name} mode")
+    st.subheader("ResearchPilot", anchor=False, icon=ICON)
+    st.caption("Agentic RAG with verifiable citations")
 
-    modes = list(RETRIEVAL_MODES[::-1])
+    st.markdown("**Settings**")
+    modes = list(MODE_LABELS)
     default_mode = info.get("retrieval_mode", "hybrid")
     mode = st.selectbox(
-        "Retrieval mode",
+        "Search method",
         modes,
         format_func=lambda m: MODE_LABELS[m],
         index=modes.index(default_mode) if default_mode in modes else 0,
+        help="\n\n".join(f"**{MODE_LABELS[m]}**: {MODE_HELP[m]}." for m in modes),
     )
-    show_trace = st.toggle("Show agent trace", value=False)
-    if question_limit is not None:
-        st.caption(f"Demo limit: {questions_left} of {question_limit} left in this session")
-    if st.button("Clear chat"):
+    show_steps = st.toggle("Show agent steps", value=True, help="Show how the agent searched for each answer.")
+    if st.session_state.messages and st.button("Clear chat", icon=":material/delete_sweep:"):
         st.session_state.messages = []
         st.rerun()
 
+    if question_limit is not None:
+        st.caption(f":material/forum: Demo limit: {questions_left} of {question_limit} left in this session")
+
     st.divider()
-    st.subheader(f"Documents ({len(sources)})")
-    st.caption(f"{sum(s['chunks'] for s in sources)} chunks indexed")
-    can_edit = bool(info.get("ingest_enabled"))
+    st.markdown(f"**Documents ({len(sources)})**")
     for s in sources:
-        left, right = st.columns([6, 1])
-        left.markdown(f"📄 **{short_title(s['title'])}**  \n{s['chunks']} chunks")
-        if can_edit and right.button("✕", key=f"del-{s['source']}", help=f"Remove {s['source']}"):
-            backend().delete(s["source"])
-            st.rerun()
+        title = display_title(s["title"])
+        link = f"[{title}]({s['source']})" if s["source"].startswith(("http://", "https://")) else title
+        if can_edit:
+            left, right = st.columns([6, 1], vertical_alignment="center")
+            left.markdown(f":material/description: {link}")
+            if right.button("", icon=":material/close:", key=f"del-{s['source']}", help=f"Remove {s['source']}"):
+                backend().delete(s["source"])
+                st.rerun()
+        else:
+            st.markdown(f":material/description: {link}")
 
     if can_edit:
-        st.divider()
-        st.subheader("Add documents")
+        st.markdown("**Add documents**")
         uploads = st.file_uploader(
             f"PDF, TXT or Markdown (max {info.get('max_upload_mb', 20)} MB each)",
             type=["pdf", "txt", "md"],
             accept_multiple_files=True,
         )
-        if uploads and st.button("Ingest uploaded files"):
-            with st.status(f"Ingesting {len(uploads)} file(s)...", expanded=True) as status:
+        if uploads and st.button("Add uploaded files"):
+            with st.status(f"Adding {plural(len(uploads), 'file')}...", expanded=True) as status:
                 show_report(status, backend().ingest_files([(u.name, u.getvalue()) for u in uploads]))
             st.rerun()
         url = st.text_input("Or a URL (web page or PDF)", placeholder="https://arxiv.org/pdf/2005.11401")
-        if url and st.button("Ingest URL"):
+        if url and st.button("Add URL"):
             ingest_urls([url.strip()])
             st.rerun()
         if not sources and SAMPLE_FILE.exists() and st.button("Load 5 sample AI papers", type="primary"):
             ingest_urls(read_sources_file(str(SAMPLE_FILE)))
             st.rerun()
     else:
-        st.info("This demo uses a fixed set of documents.")
+        st.info("This demo uses a fixed set of documents.", icon=":material/lock:")
+
+    st.divider()
+    st.caption(f"Built by Kartik Kaushik · [GitHub]({GITHUB_URL})")
+    st.caption(f"{model_label(info['llm_provider'], info['llm_model'])} · v{__version__}")
 
 # --------------------------------------------------------------------------- chat
-st.header("Ask your documents")
-st.caption(
-    "A LangGraph agent plans searches, retrieves with hybrid BM25 + vector search (optional cross-encoder reranking), "
-    "checks whether the context is enough (searching again if not), and answers with citations."
+st.header(page_heading(sources, can_edit), anchor=False)
+st.markdown(
+    "An AI research agent that plans its searches, checks whether it found enough, searches again "
+    "if needed, and answers with citations you can open."
 )
+with st.expander("How it works", icon=":material/help_outline:"):
+    st.markdown(how_it_works(mode, settings.max_retrieval_rounds))
 
 for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
+    with st.chat_message(message["role"], avatar=USER_AVATAR if message["role"] == "user" else ICON):
         if message["role"] == "user":
             st.markdown(message["content"])
         elif "notice" in message:  # the question couldn't be answered (e.g. the LLM quota is used up)
-            st.warning(message["notice"], icon="⏳")
+            st.warning(message["notice"], icon=":material/hourglass_top:")
         else:
-            render_result(message["result"], show_trace)
+            render_result(message["result"], show_steps)
 
-question = st.chat_input("Ask a question about your documents", disabled=not sources or limit_reached)
+# Before the first question the input sits under the intro, so the page opens at the top; a pinned
+# input makes Streamlit scroll to the bottom, which hides the heading on a phone. Once the chat has
+# started, the input is pinned to the bottom as usual.
+landing = not st.session_state.messages
+input_area = st.container() if landing else st
+question = input_area.chat_input("Ask a question about the documents", disabled=not sources or limit_reached)
 if not sources:
     st.info("No documents yet. Add some from the sidebar to start.")
 elif limit_reached:
@@ -235,28 +298,30 @@ elif limit_reached:
         f"Thanks for trying ResearchPilot! This public demo allows {question_limit} "
         f"question{'' if question_limit == 1 else 's'} per session "
         f"to keep it free for everyone. To keep exploring, run it yourself from the [GitHub repository]({GITHUB_URL}).",
-        icon="🙏",
+        icon=":material/favorite:",
     )
 elif not st.session_state.messages and not question:
     examples = st.empty()  # cleared once a question is asked, so the buttons don't linger above the chat
     with examples.container():
-        st.markdown("**Try one of these:**")
-        cols = st.columns(2)
-        for i, example in enumerate(EXAMPLES):
-            if cols[i % 2].button(example, key=f"ex-{i}"):
-                question = example
+        st.markdown("**Or try one of these:**")
+        for row in range(0, len(EXAMPLES), 2):  # one row per pair, so phones stack them in order
+            pairs = enumerate(EXAMPLES[row : row + 2], start=row)
+            for col, (i, (kind, example)) in zip(st.columns(2), pairs, strict=False):  # odd count: one empty column
+                if col.button(f"**{kind}:** {example}", key=f"ex-{i}", width="stretch", wrap=True):
+                    question = example
     if question:
         examples.empty()
 
 if question and not limit_reached:
     st.session_state.questions_asked += 1
     st.session_state.messages.append({"role": "user", "content": question})
-    with st.chat_message("user"):
+    with st.chat_message("user", avatar=USER_AVATAR):
         st.markdown(question)
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=ICON):
         result, notice = None, None
+        progress = st.empty()  # live steps while the agent works; replaced by the answer when it's done
         try:
-            with st.status("Researching...", expanded=True) as status:
+            with progress.container(), st.status("Researching...", expanded=True) as status:
                 try:
                     for event in backend().ask_stream(question, mode=mode):
                         if event["type"] == "step":
@@ -267,19 +332,21 @@ if question and not limit_reached:
                     notice = rate_limit_notice(exc.daily)
                     status.update(label="The LLM's free-tier limit was reached", state="error", expanded=False)
                 else:
-                    label = f"Done in {result['seconds']}s" if result else "Finished"
-                    status.update(label=label, state="complete", expanded=False)
+                    status.update(label="Done", state="complete", expanded=False)
         except LLMConfigError as exc:
             st.error(f"The LLM isn't configured: {exc}. Set LLM_PROVIDER, LLM_MODEL and the API key in `.env`.")
         except Exception as exc:
             st.error(f"Something went wrong: {exc}")
         if result:
-            render_result(result, show_trace)
+            progress.empty()
+            render_result(result, show_steps)
             st.session_state.messages.append({"role": "assistant", "result": result})
         else:
             st.session_state.questions_asked -= 1  # only answered questions count towards the demo limit
             if notice:
-                st.warning(notice, icon="⏳")
+                st.warning(notice, icon=":material/hourglass_top:")
                 st.session_state.messages.append({"role": "assistant", "notice": notice})
-        if result and question_limit is not None:
-            st.rerun()  # update the questions-left count, and disable the input once the limit is hit
+        if result and (question_limit is not None or landing):
+            # Update the questions-left count and disable the input once the limit is hit; after the
+            # first question, also move the input from under the intro to the bottom of the page.
+            st.rerun()

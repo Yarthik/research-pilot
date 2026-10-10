@@ -146,7 +146,7 @@ Mount a volume at `/app/storage` to keep the index across restarts.
 
 ## Checklist before sharing the link
 
-- [ ] The sidebar shows the five papers and "583 chunks indexed" (or `/health` on the API shows a non-zero chunk count)
+- [ ] The sidebar lists the five papers with clean titles (or `/health` on the API shows a non-zero chunk count), and the heading reads "Ask questions about five landmark AI papers"
 - [ ] One example question returns an answer with citations
 - [ ] `ALLOW_INGEST=false` on public deployments: the sidebar says "This demo uses a fixed set of documents" and has no upload or ✕ buttons
 - [ ] The sidebar shows "Demo limit: N of N left in this session" if `DEMO_MAX_QUESTIONS` is set

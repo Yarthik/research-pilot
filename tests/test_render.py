@@ -74,6 +74,48 @@ def test_existing_dollar_maths_and_plain_text_are_untouched():
     assert streamlit_markdown("") == "" and streamlit_markdown(None) == ""
 
 
+def test_plural_and_model_label():
+    from render import model_label, plural
+
+    assert plural(1, "search round") == "1 search round" and plural(2, "search round") == "2 search rounds"
+    assert plural(0, "passage") == "0 passages" and plural(3, "search", "searches") == "3 searches"
+    assert model_label("groq", "openai/gpt-oss-120b") == "gpt-oss-120b via Groq"
+    assert model_label("anthropic", "claude-haiku-4-5") == "claude-haiku-4-5 via Anthropic"
+    assert model_label("custom", "m") == "m via custom"
+
+
+def test_answer_footer_reads_naturally():
+    from render import answer_footer
+
+    one = answer_footer({"seconds": 2.5, "round": 1, "evidence_count": 1})
+    assert one == "Answered in 2.5 s · 1 search round · 1 passage considered"
+    two = answer_footer({"seconds": 3.4, "round": 2, "evidence_count": 9})
+    assert two == "Answered in 3.4 s · 2 search rounds · 9 passages considered"
+    assert "(s)" not in one + two and "chunk" not in one + two
+
+
+def test_agent_steps_are_described_in_plain_english():
+    from render import describe_step
+
+    plan = describe_step({"step": "plan", "queries": ["LoRA rank"], "seconds": 0.7})
+    assert plan == "Planned 1 search: LoRA rank (0.7 s)"
+    assert describe_step({"step": "plan", "queries": ["a", "b"], "needs_web": True, "seconds": 1}).startswith(
+        "Planned 2 searches and a web search: a; b"
+    )
+    assert "Couldn't plan" in describe_step({"step": "plan", "queries": ["q"], "error": "boom", "seconds": 1})
+    found = describe_step({"step": "retrieve", "round": 2, "new_chunks": 1, "evidence": 6, "seconds": 0.1})
+    assert found == "Search round 2: found 1 new passage; 6 in use (0.1 s)"
+    retry = describe_step({"step": "grade", "sufficient": False, "missing": "the actions", "new_queries": ["x"]})
+    assert retry.startswith("Missing: the actions → searching again: x")
+    assert describe_step({"step": "grade", "sufficient": True, "seconds": 1}).startswith("Checked the passages")
+    assert describe_step({"step": "grade", "sufficient": None, "skipped": True}).startswith("Last search round")
+    assert "Couldn't check" in describe_step({"step": "grade", "sufficient": True, "error": "boom", "seconds": 1})
+    answered = describe_step({"step": "generate", "sources": 8, "cited": [], "seconds": 1})
+    assert answered == "Wrote the answer from 8 passages, citing none (1 s)"
+    steps = [plan, found, retry, answered]
+    assert not any("(s)" in s or "(es)" in s or "chunk" in s for s in steps)
+
+
 def test_rate_limit_notice_is_friendly_and_points_to_the_repo():
     from render import GITHUB_URL, rate_limit_notice
 

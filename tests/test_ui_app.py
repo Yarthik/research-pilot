@@ -114,6 +114,77 @@ def test_rate_limit_shows_a_friendly_message_not_the_raw_error(
     assert not at.chat_input[0].disabled
 
 
+def _page_text(at: AppTest) -> str:
+    groups = (at.header, at.markdown, at.caption, at.info, at.warning, at.expander, at.button, at.toggle)
+    return " ".join(str(getattr(el, "value", None) or getattr(el, "label", "")) for g in groups for el in g)
+
+
+def test_own_documents_mode_copy_settings_and_footer(loaded_retriever, monkeypatch):
+    from researchpilot import __version__
+
+    at = _app(monkeypatch).run()
+    assert not at.exception
+    assert at.header[0].value == "Ask questions about your documents"
+    assert at.selectbox[0].label == "Search method"
+    labels = ["Hybrid (recommended)", "Hybrid + reranker", "Keyword (BM25)", "Semantic (vector)"]
+    assert at.selectbox[0].options == labels
+    assert at.selectbox[0].help and "Keyword (BM25)" in at.selectbox[0].help
+    steps = at.toggle[0]
+    assert steps.label == "Show agent steps" and steps.value is True
+
+    how = next(e for e in at.expander if e.label == "How it works")
+    text = " ".join(m.value for m in how.markdown)
+    assert "**Plan**" in text and "**Grade**" in text and "Currently selected: **Hybrid (recommended)**" in text
+    assert "github.com/Yarthik/research-pilot#evaluation" in text
+
+    sidebar = " ".join(c.value for c in at.sidebar.caption)
+    assert "Agentic RAG with verifiable citations" in sidebar
+    assert "Built by Kartik Kaushik" in sidebar and "https://github.com/Yarthik/research-pilot" in sidebar
+    assert " via " in sidebar and f"v{__version__}" in sidebar
+    page = _page_text(at) + sidebar
+    assert "local mode" not in page and "chunks" not in page
+    assert len(_example_buttons(at)) == 4
+
+
+def test_demo_mode_names_the_sample_papers_with_clean_linked_titles(retriever, monkeypatch):
+    from researchpilot.cli import read_sources_file
+
+    samples = read_sources_file(str(APP.parents[1] / "data" / "sample_sources.txt"))
+    titles = {url: f"Paper {i}" for i, url in enumerate(samples)}
+    lora = next(url for url in samples if "2106.09685" in url)
+    titles[lora] = "LORA: LOW-RANK ADAPTATION OF LARGE LANGUAGE MODELS"  # an index from before the title fix
+    retriever.store.add(
+        [make_chunk(u, f"text of {u}", u, titles[u]) for u in samples], [fake_embed("x") for _ in samples]
+    )
+    at = _app(monkeypatch, ALLOW_INGEST="false").run()
+    assert not at.exception
+    assert at.header[0].value == "Ask questions about five landmark AI papers"
+    links = " ".join(m.value for m in at.sidebar.markdown)
+    assert f"[LoRA: Low-Rank Adaptation of Large Language Models]({lora})" in links
+    assert "LORA: LOW-RANK" not in links
+    assert any("fixed set of documents" in i.value for i in at.sidebar.info)
+
+
+def test_read_only_mode_with_other_documents_has_a_neutral_heading(loaded_retriever, monkeypatch):
+    at = _app(monkeypatch, ALLOW_INGEST="false").run()
+    assert at.header[0].value == "Ask questions about these documents"
+
+
+def test_answer_shows_agent_steps_and_a_natural_footer(loaded_retriever, fake_llm, monkeypatch):
+    fake_llm.responses = {"ResearchPlan": [PLAN], "ContextGrade": [{"sufficient": True}], "Answer": [ANSWER]}
+    at = _app(monkeypatch).run()
+    at.chat_input[0].set_value("How does LoRA work?").run()
+    assert not at.exception
+    steps = next(e for e in at.expander if e.label.startswith("Agent steps"))
+    assert any("Planned 1 search: LoRA rank decomposition" in m.value for m in steps.markdown)
+    assert any(c.value.startswith("Answered in") and "1 search round ·" in c.value for c in at.caption)
+    assert "(s)" not in " ".join(c.value for c in at.caption)
+
+    at.toggle[0].set_value(False).run()  # steps hidden, the answer stays
+    assert not any(e.label.startswith("Agent steps") for e in at.expander)
+    assert any("rank decomposition" in m.value for m in at.markdown)
+
+
 def test_a_boolean_secret_makes_the_page_read_only(loaded_retriever, monkeypatch):
     # Streamlit Community Cloud does not copy TOML booleans (ALLOW_INGEST = false) into the environment.
     monkeypatch.setenv("ALLOW_INGEST", "x")

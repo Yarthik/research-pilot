@@ -89,6 +89,62 @@ def short_title(title: str, limit: int = 80) -> str:
 
 
 GITHUB_URL = "https://github.com/Yarthik/research-pilot"
+PROVIDER_NAMES = {
+    "groq": "Groq",
+    "openai": "OpenAI",
+    "anthropic": "Anthropic",
+    "google_genai": "Google",
+    "ollama": "Ollama",
+}
+
+
+def plural(count: int, word: str, many: str | None = None) -> str:
+    """E.g. "1 search round", "2 search rounds"."""
+    return f"{count} {word if count == 1 else many or word + 's'}"
+
+
+def model_label(provider: str, model: str) -> str:
+    """E.g. "openai/gpt-oss-120b" on groq -> "gpt-oss-120b via Groq"."""
+    return f"{(model or '').rsplit('/', 1)[-1]} via {PROVIDER_NAMES.get(provider, provider)}"
+
+
+def answer_footer(result: dict) -> str:
+    rounds = result.get("round") or 0
+    passages = result.get("evidence_count", 0)
+    return (
+        f"Answered in {result.get('seconds', 0)} s · {plural(rounds, 'search round')} · "
+        f"{plural(passages, 'passage')} considered"
+    )
+
+
+def describe_step(event: dict) -> str:
+    """One plain-English line for an agent step (a streamed step event or a trace entry)."""
+    step = event.get("step")
+    seconds = f" ({event.get('seconds', 0)} s)"
+    if step == "plan":
+        queries = event.get("queries", [])
+        if event.get("error"):
+            return f"Couldn't plan (the model call failed), so it searches for the question as asked{seconds}"
+        web = " and a web search" if event.get("needs_web") else ""
+        return f"Planned {plural(len(queries), 'search', 'searches')}{web}: {'; '.join(queries)}{seconds}"
+    if step == "retrieve":
+        web = f" and {plural(event['new_web_results'], 'web result')}" if event.get("new_web_results") else ""
+        found = f"{plural(event.get('new_chunks', 0), 'new passage')}{web}"
+        return f"Search round {event.get('round')}: found {found}; {event.get('evidence', 0)} in use{seconds}"
+    if step == "grade":
+        if event.get("skipped"):
+            return "Last search round done, so it answers with what it found"
+        if event.get("error"):
+            return f"Couldn't check the passages (the model call failed), so it answers with what it found{seconds}"
+        if event.get("sufficient"):
+            return f"Checked the passages: enough to answer{seconds}"
+        if event.get("new_queries"):
+            return f"Missing: {event.get('missing')} → searching again: {'; '.join(event['new_queries'])}{seconds}"
+        return f"Something is missing: {event.get('missing')}{seconds}"
+    if step == "generate":
+        cited = len(event.get("cited", [])) or "none"
+        return f"Wrote the answer from {plural(event.get('sources', 0), 'passage')}, citing {cited}{seconds}"
+    return str(event)
 
 
 def rate_limit_notice(daily: bool) -> str:

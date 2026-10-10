@@ -4,6 +4,15 @@
 # Hide the "Deploy" button and the developer menu.
 toolbarMode = "minimal"
 
+# One accent colour instead of Streamlit's default red. It is set for both themes (not under [theme],
+# which would replace them with a single custom light theme), so visitors keep light and dark mode.
+# #2F6FE4 has a 4.6:1 contrast with white text on buttons and 4.1:1 against the dark background.
+[theme.light]
+primaryColor = "#2F6FE4"
+
+[theme.dark]
+primaryColor = "#2F6FE4"
+
 [server]
 # Matches the default MAX_UPLOAD_MB=20. The Docker image passes --server.maxUploadSize=$MAX_UPLOAD_MB,
 # so there the uploader's limit follows that setting.

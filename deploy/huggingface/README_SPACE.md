@@ -1,6 +1,6 @@
 ---
 title: ResearchPilot
-emoji: 🧭
+emoji: 🔍
 colorFrom: indigo
 colorTo: blue
 sdk: docker
