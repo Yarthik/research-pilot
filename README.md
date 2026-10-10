@@ -188,6 +188,7 @@ Everything is set through environment variables or `.env` (see [.env.example](.e
 | `EMBEDDING_MODEL` / `RERANKER_MODEL` | `BAAI/bge-small-en-v1.5` / `Xenova/ms-marco-MiniLM-L-6-v2` | Local FastEmbed (ONNX) models |
 | `TAVILY_API_KEY` | unset | Enables web search when the planner decides documents won't cover a question |
 | `API_KEY`, `ALLOW_INGEST`, `MAX_UPLOAD_MB` | unset, `true`, `20` | API protection for public deployments |
+| `AUTO_INGEST_SAMPLES`, `DEMO_MAX_QUESTIONS` | unset, unset | Public demo: ingest the sample papers on first start; cap questions per UI session (unset = unlimited) |
 | `LANGSMITH_TRACING`, `LANGSMITH_API_KEY` | unset | Send LangGraph traces to LangSmith |
 
 Example models: OpenAI `gpt-4o-mini`, Anthropic `claude-haiku-4-5-20251001`, Ollama `llama3.1`. Model names change over time, so check your provider's list.

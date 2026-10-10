@@ -23,7 +23,7 @@ from render import short_title, streamlit_markdown  # noqa: E402
 
 from researchpilot import __version__  # noqa: E402
 from researchpilot.cli import read_sources_file  # noqa: E402
-from researchpilot.config import RETRIEVAL_MODES  # noqa: E402
+from researchpilot.config import RETRIEVAL_MODES, get_settings  # noqa: E402
 from researchpilot.llm import LLMConfigError  # noqa: E402
 
 SAMPLE_FILE = ROOT / "data" / "sample_sources.txt"
@@ -116,18 +116,24 @@ def ingest_urls(urls: list[str]) -> None:
 
 @st.cache_resource(show_spinner="Loading the sample papers (first start only)...")
 def auto_ingest_samples() -> bool:
-    """On a fresh deployment, ingest the sample papers once so the demo works immediately."""
-    if not backend().sources() and SAMPLE_FILE.exists():
-        backend().ingest_urls(read_sources_file(str(SAMPLE_FILE)))
-    return True
+    """Ingest any sample papers missing from the index, so a fresh deployment works immediately.
+
+    Returns False if a download failed; the caller then clears the cache so the next page load retries.
+    """
+    if not SAMPLE_FILE.exists():
+        return True
+    present = {s["source"] for s in backend().sources()}
+    missing = [url for url in read_sources_file(str(SAMPLE_FILE)) if url not in present]
+    return not missing or not backend().ingest_urls(missing)["failed"]
 
 
 # --------------------------------------------------------------------------- startup
 try:
     info = backend().info()
     # In API mode the API service handles AUTO_INGEST_SAMPLES itself.
-    if backend().name == "local" and os.environ.get("AUTO_INGEST_SAMPLES", "").lower() in {"1", "true", "yes"}:
-        auto_ingest_samples()
+    auto_ingest = os.environ.get("AUTO_INGEST_SAMPLES", "").lower() in {"1", "true", "yes"}
+    if backend().name == "local" and auto_ingest and not auto_ingest_samples():
+        auto_ingest_samples.clear()  # a download failed: try the missing papers again on the next load
     sources = backend().sources()
 except Exception as exc:
     st.error(f"Could not reach the document index: {exc}")
@@ -135,6 +141,13 @@ except Exception as exc:
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "questions_asked" not in st.session_state:
+    st.session_state.questions_asked = 0  # not reset by "Clear chat", so the demo limit holds
+
+# Optional per-session cap for a public demo (DEMO_MAX_QUESTIONS); None means unlimited.
+question_limit = get_settings().demo_max_questions
+questions_left = None if question_limit is None else max(question_limit - st.session_state.questions_asked, 0)
+limit_reached = questions_left == 0
 
 # --------------------------------------------------------------------------- sidebar
 with st.sidebar:
@@ -150,6 +163,8 @@ with st.sidebar:
         index=modes.index(default_mode) if default_mode in modes else 0,
     )
     show_trace = st.toggle("Show agent trace", value=False)
+    if question_limit is not None:
+        st.caption(f"Demo limit: {questions_left} of {question_limit} left in this session")
     if st.button("Clear chat"):
         st.session_state.messages = []
         st.rerun()
@@ -201,9 +216,16 @@ for message in st.session_state.messages:
         else:
             render_result(message["result"], show_trace)
 
-question = st.chat_input("Ask a question about your documents", disabled=not sources)
+question = st.chat_input("Ask a question about your documents", disabled=not sources or limit_reached)
 if not sources:
     st.info("No documents yet. Add some from the sidebar to start.")
+elif limit_reached:
+    st.info(
+        f"Thanks for trying ResearchPilot! This public demo allows {question_limit} "
+        f"question{'' if question_limit == 1 else 's'} per session "
+        "to keep it free for everyone. To keep exploring, run it yourself from the GitHub repository.",
+        icon="🙏",
+    )
 elif not st.session_state.messages and not question:
     examples = st.empty()  # cleared once a question is asked, so the buttons don't linger above the chat
     with examples.container():
@@ -215,7 +237,8 @@ elif not st.session_state.messages and not question:
     if question:
         examples.empty()
 
-if question:
+if question and not limit_reached:
+    st.session_state.questions_asked += 1
     st.session_state.messages.append({"role": "user", "content": question})
     with st.chat_message("user"):
         st.markdown(question)
@@ -237,3 +260,5 @@ if question:
         if result:
             render_result(result, show_trace)
             st.session_state.messages.append({"role": "assistant", "result": result})
+            if question_limit is not None:
+                st.rerun()  # update the questions-left count, and disable the input once the limit is hit

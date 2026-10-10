@@ -10,11 +10,13 @@ All code is written. It was developed in a sandbox with no access to PyPI, Huggi
 so these parts have NOT yet run against the real libraries and need verifying first:
 
 - LLM providers other than Groq (only initialised with dummy keys)
-- `docker compose up --build` locally (Docker Desktop wasn't running in Stage 5; CI builds the image
-  and smoke-tests the API container)
+- `docker compose up --build` locally: skipped by decision, since Docker Desktop can't run on the
+  owner's machine (Windows virtualization is disabled). CI builds the image and smoke-tests the API
+  container on every push, which stands in for this check.
+- The live Hugging Face Space (prepared in Stage 6; the owner deploys it with their own token)
 
 Already verified: pure-Python logic (chunking, BM25, RRF, citations, evidence selection, agent
-nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 133 fast tests
+nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 137 fast tests
 (`pytest -m "not slow"`) and 1 slow test (`pytest -m slow`) pass, `ruff` is clean, and
 `requirements.txt` is pinned to the versions that ran. Verified against the real libraries in
 Stage 1: ChromaDB calls in `retrieval/vector_store.py`, FastEmbed embeddings and reranker (slow
@@ -58,6 +60,15 @@ Streamlit UI by hand (sources, live steps, citations, mode switch, PDF upload/de
 retry, out-of-scope question, clear chat). UI text goes through `app/render.py` (LaTeX delimiters,
 currency escaping, word-boundary titles); `.streamlit/config.toml` sets the minimal toolbar and the
 20 MB upload limit.
+
+Stage 6 (Hugging Face Space prep): `DEMO_MAX_QUESTIONS` caps UI questions per browser session
+(unset = unlimited; "Clear chat" doesn't reset it; tested with Streamlit AppTest in
+`tests/test_ui_app.py`). `AUTO_INGEST_SAMPLES` in the UI now ingests only missing sample papers and
+retries on the next page load if a download failed. A simulated fresh Space (empty storage,
+`AUTO_INGEST_SAMPLES=true`, `ALLOW_INGEST=false`) ingested the 5 papers in about 2 minutes and hid
+upload/delete. `scripts/deploy_hf_space.sh` exports with `core.autocrlf=false` (Git for Windows'
+`git archive` otherwise writes CRLF) and has `DRY_RUN=1`; it was dry-run from Git Bash, never
+pushed by Claude. Steps and Space variables are in docs/DEPLOY.md.
 
 ## Commands
 

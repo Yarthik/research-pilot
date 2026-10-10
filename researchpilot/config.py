@@ -51,6 +51,7 @@ class Settings(BaseModel):
     allow_ingest: bool = True  # turn off on a public demo to make the corpus read-only
     max_upload_mb: int = Field(20, ge=1)
     cors_origins: str = "*"  # comma-separated list for the API
+    demo_max_questions: int | None = Field(None, ge=1)  # UI questions per browser session; unset = unlimited
 
     @field_validator("retrieval_mode")
     @classmethod
