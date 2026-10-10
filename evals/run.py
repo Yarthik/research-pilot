@@ -123,16 +123,16 @@ def is_rate_limit(error: object) -> bool:
     return any(marker in str(error).lower() for marker in _RATE_LIMIT_MARKERS)
 
 
-def _load_checkpoint(path: Path | None, meta: dict) -> list[dict]:
-    """Rows already evaluated by an earlier, interrupted run with the same configuration."""
+def _load_checkpoint(path: Path | None, meta: dict) -> tuple[list[dict], str | None]:
+    """Rows already evaluated by an earlier run with the same configuration, and that run's date."""
     if path is None or not path.exists():
-        return []
+        return [], None
     saved = json.loads(path.read_text(encoding="utf-8"))
     keys = ("llm", "mode", "max_rounds", "judge", "judge_prompt")
     if any(saved["meta"].get(k) != meta.get(k) for k in keys):
         theirs = {k: saved["meta"].get(k) for k in keys}
         raise SystemExit(f"{path} was made with a different configuration {theirs}; delete it to start over.")
-    return saved["details"]
+    return saved["details"], saved["meta"].get("date")
 
 
 def run_answers(
@@ -169,7 +169,10 @@ def run_answers(
         "judge_prompt": CORRECTNESS_PROMPT_VERSION,
     }
     wanted = {row["id"] for row in dataset}
-    rows = [r for r in _load_checkpoint(checkpoint, meta) if r["id"] in wanted]
+    saved_rows, saved_date = _load_checkpoint(checkpoint, meta)
+    if saved_date:
+        meta["date"] = saved_date  # a resumed run keeps the date it started on
+    rows = [r for r in saved_rows if r["id"] in wanted]
     done = {r["id"] for r in rows}
     if done:
         print(f"  resuming: {len(done)} of {len(dataset)} questions already in {checkpoint.name}")

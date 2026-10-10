@@ -148,15 +148,30 @@ Raw results are in `evals/results/experiments/`; reproduce a row with `RERANKER_
 **Answers** (uses the LLM): runs the full agent and scores each answer with an LLM judge for **correctness** against a reference answer (correct = 1, partially = 0.5), **faithfulness** (share of the answer's claims supported by the passages it cites), citation coverage, whether it **abstains** on unanswerable questions, and false abstentions. The ablation compares one retrieval round against the self-correcting two-round loop.
 
 <!-- EVAL:ANSWERS:START -->
-_Not run yet. Run `python -m evals answers --compare-retry --update-readme` to fill in this table._
+| Configuration | Correctness | Fully correct | Faithfulness | Answers with citations | Abstains when it should | False abstentions | Retried | p50 latency |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 round (no retry) | 88.0% | 80.0% | 94.6% | 100.0% | 100.0% | 4.0% | 0.0% | 2.3 s |
+| 2 rounds (self-correcting) | 88.0% | 80.0% | 94.9% | 100.0% | 100.0% | 4.0% | 20.7% | 3.5 s |
+
+_29 questions (incl. unanswerable ones) · LLM `groq/openai/gpt-oss-120b` · judge `groq/qwen/qwen3.8-27b` (prompt v2) · runs 1 round (no retry): 2026-10-09 13:14 UTC; 2 rounds (self-correcting): 2026-10-10 13:57 UTC_
 <!-- EVAL:ANSWERS:END -->
 
+**Findings.** With 29 questions, one question moves correctness by 2 to 4 points.
+
+- **The retry rarely fires, and it changed one answer.** 6 of 29 questions retried in the 2-round run: 3 of the 4 unanswerable ones, plus `re3`, `l5` and `c2`. The retry helped `re3`: round 2 found the passage listing ReAct's search/lookup/finish actions, so the verdict went from partial to correct. It made no difference to the other five. The only other verdict change, `r3`, did not retry; it is run-to-run variation (the second answer left out "December 2018"). That is why the totals are identical. Here the first round's evidence usually suffices, and the loop costs latency (p50 2.3 → 3.5 s, p95 4.5 → 10.4 s).
+- **Abstention.** Both configurations declined all 4 unanswerable questions. The one false abstention is `l5` (how LoRA initialises A and B). The agent said the documents don't cover it, which is honest given what it retrieved: no retrieval mode finds that passage (see the retrieval Findings), and the retry's rewritten queries missed it too. It is scored incorrect.
+- **Judging.** The judge is `qwen/qwen3.8-27b`, from a different model family than the gpt-oss agent, to reduce self-grading bias. It uses judge prompt v2. The prompt was revised once, after a spot-check showed v1 penalised answers for omitting reference details the question didn't ask for: "28.4 BLEU" was marked partial for not adding "more than 2 BLEU above the previous best". The saved 1-round answers were re-graded with v2. On answerable questions, an answer counts as an abstention only if it cites nothing and declines (via the agent's flag or its wording); a cited answer that notes a missing detail counts as an answer.
+- **Caveats.** The two configurations ran on different days to fit Groq's free-tier daily token limit, so run-to-run variation is mixed into the comparison, as `r3` shows. In 3 questions of the 2-round run (`t3`, `r3`, `c1`) the grader's structured output failed: gpt-oss returned JSON text instead of a tool call, and the grade step fell back to "sufficient". Each rejected output also said sufficient, so no retry was lost. Treat differences of a question or two as noise.
+
 ```bash
-python -m evals retrieval --update-readme                         # ~1 minute on CPU
-python -m evals answers --compare-retry --delay 2 --update-readme # ~10 LLM calls per question per config
+python -m evals retrieval --update-readme                      # ~1 minute on CPU
+python -m evals answers --rounds 1 --delay 30                  # one config; saved after every question
+python -m evals answers --rounds 2 --delay 30                  # e.g. the next day, after the quota resets
+python -m evals answers --compare-retry --update-readme        # combines the two saved runs, no LLM calls
+python -m evals rejudge --rounds 1                             # re-grade saved answers after a judge-prompt change
 ```
 
-Notes: the answer eval makes roughly 10 LLM calls per question per configuration, which can exceed a free tier's daily limit. Use `--limit 10` to run a subset, or point `JUDGE_PROVIDER` / `JUDGE_MODEL` at a stronger or cheaper model. Using the same model as both agent and judge can flatter the scores; a different, stronger judge is more trustworthy. Results are also saved as JSON in `evals/results/` with per-question details. A weekly GitHub Action re-runs the retrieval benchmark.
+Notes: each question costs about 2 to 3 agent calls and 2 judge calls per configuration. On Groq's free tier (8K tokens/min and 200K tokens/day per model) `--delay 30` avoids per-minute limits, and one configuration of 29 questions fits comfortably in a day. Runs are saved after every question to `evals/results/answers_<mode>_<n>round.json`. A rate-limit or quota error stops the run without recording that question, and re-running the same command resumes. Using the same model as both agent and judge can flatter the scores, so set `JUDGE_PROVIDER` / `JUDGE_MODEL` to a different model family. Per-question details, including the judge's reasons, are in the JSON files. A weekly GitHub Action re-runs the retrieval benchmark.
 
 ## Configuration
 

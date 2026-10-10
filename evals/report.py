@@ -55,10 +55,16 @@ def answers_table(runs: dict) -> str:
             f"{_pct(s['retried'])} | {s['latency_s_p50']:.1f} s |"
         )
     if meta:
+        dates = {label: result["meta"]["date"] for label, result in runs.items()}
+        if len(set(dates.values())) == 1:
+            when = f"run {meta['date']}"
+        else:
+            when = "runs " + "; ".join(f"{label}: {date}" for label, date in dates.items())
+        prompt = f" (prompt v{meta['judge_prompt']})" if meta.get("judge_prompt") else ""
         lines.append("")
         lines.append(
             f"_{next(iter(runs.values()))['summary']['questions']} questions (incl. unanswerable ones) · "
-            f"LLM `{meta['llm']}` · judge `{meta['judge']}` · run {meta['date']}_"
+            f"LLM `{meta['llm']}` · judge `{meta['judge']}`{prompt} · {when}_"
         )
     return "\n".join(lines) + "\n"
 

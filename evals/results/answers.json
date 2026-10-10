@@ -1,0 +1,1448 @@
+{
+  "1 round (no retry)": {
+    "meta": {
+      "date": "2026-10-09 13:14 UTC",
+      "llm": "groq/openai/gpt-oss-120b",
+      "embedding_model": "BAAI/bge-small-en-v1.5",
+      "reranker_model": "Xenova/ms-marco-MiniLM-L-6-v2",
+      "chunk_size": 1000,
+      "chunk_overlap": 150,
+      "mode": "hybrid",
+      "max_rounds": 1,
+      "judge": "groq/qwen/qwen3.8-27b",
+      "judge_prompt": 2
+    },
+    "complete": true,
+    "summary": {
+      "questions": 29,
+      "errors": 0,
+      "correctness": 0.88,
+      "fully_correct": 0.8,
+      "faithfulness": 0.9464,
+      "answers_with_citations": 1.0,
+      "invalid_citation_rate": 0.0,
+      "false_abstention_rate": 0.04,
+      "abstention_accuracy": 1.0,
+      "retried": 0.0,
+      "latency_s_p50": 2.26,
+      "latency_s_p95": 4.53
+    },
+    "details": [
+      {
+        "id": "t1",
+        "type": "single",
+        "answer": "The base Transformer uses **8 attention heads**, and each head has a dimensionality of **64** (since dk = dv = dmodel/h = 64)[2].",
+        "insufficient": false,
+        "cited": [
+          2
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 3.97,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly states 8 attention heads and a dimension of 64 per head, matching the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 2,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "t2",
+        "type": "single",
+        "answer": "The big Transformer achieved a BLEU score of **28.4** on the WMT\u202f2014 English\u2011to\u2011German translation task.",
+        "insufficient": false,
+        "cited": [
+          1
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 1.92,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly states the 28.4 BLEU score for the big Transformer on WMT 2014 English-to-German, which is the key fact the question asks for.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 1,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "t3",
+        "type": "single",
+        "answer": "In the Transformer the raw dot\u2011product between a query and a key has a variance that grows linearly with the key dimension\u202fd\u2096 (if the query and key components are independent with unit variance,\u202fVar(q\u00b7k)=d\u2096)[5]. As d\u2096 becomes large the dot\u2011products become large in magnitude, which drives the softmax into its saturated tails where the gradients are very small[1]. To keep the softmax in a region with stable gradients, the dot\u2011products are divided by \u221ad\u2096, i.e. scaled by 1/\u221ad\u2096, which normalises their variance to roughly\u202f1 and prevents the softmax from saturating[1]. This scaling is therefore introduced to counteract the effect of large\u2011dimensional dot\u2011products on the softmax.",
+        "insufficient": false,
+        "cited": [
+          5,
+          1
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.82,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The answer correctly states that large d_k makes dot products large in magnitude, pushing softmax into regions with very small gradients, and that scaling by 1/sqrt(d_k) counteracts this, matching the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 0.8571,
+          "claims": 7,
+          "unsupported": [
+            "Scaling by 1/\u221ad_k normalises the variance of the dot-products to roughly 1"
+          ]
+        }
+      },
+      {
+        "id": "t4",
+        "type": "single",
+        "answer": "The Transformer has no recurrence or convolution, so it supplies order information by **adding positional encodings to the token embeddings** at the bottom of the encoder and decoder stacks.  The encodings have the same dimensionality as the embeddings and are summed with them.  In the original model the encodings are fixed sinusoidal functions of the token\u2019s position:\n\n- \\(PE_{(pos,2i)} = \\sin\\big(pos / 10000^{2i/d_{model}}\\big)\\)\n- \\(PE_{(pos,2i+1)} = \\cos\\big(pos / 10000^{2i/d_{model}}\\big)\\)\n\nwhere *pos* is the token\u2019s position and *i* indexes the dimension.  Each dimension thus corresponds to a sinusoid of a different frequency, allowing the model to infer relative positions.  Learned positional embeddings can also be used, yielding similar performance.\n\n**Sources**: [3] describes the need to inject position information and the addition of positional encodings; [1] gives the sinusoidal formulation and notes the alternative learned embeddings.",
+        "insufficient": false,
+        "cited": [
+          3,
+          1
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 3.87,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The answer correctly states that the Transformer adds positional encodings to the input embeddings using sine and cosine functions of different frequencies, matching the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 13,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "t5",
+        "type": "single",
+        "answer": "The original Transformer was trained with the Adam optimizer (\u03b2\u2081\u202f=\u202f0.9, \u03b2\u2082\u202f=\u202f0.98, \u03b5\u202f=\u202f10\u207b\u2079) and a learning\u2011rate schedule that linearly increases the rate for the first\u202fwarmup_steps\u202fsteps (warmup_steps\u202f=\u202f4000) and then decays proportionally to the inverse square root of the step number: \\(\\text{lrate}=d_{model}^{-0.5}\\,\\min(step_{num}^{-0.5},\\,step_{num}\\,warmup_{steps}^{-1.5})\\).",
+        "insufficient": false,
+        "cited": [
+          3
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.1,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly identifies the Adam optimizer with the exact hyperparameters (\u03b2\u2081=0.9, \u03b2\u2082=0.98, \u03b5=1e-9) and the learning rate schedule (linear warmup for 4000 steps followed by inverse square root decay), matching all key facts in the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 8,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "r1",
+        "type": "single",
+        "answer": "RAG\u2011Sequence and RAG\u2011Token are two variants of Retrieval\u2011Augmented Generation that differ in how they treat the retrieved documents when generating text.\n\n* **RAG\u2011Sequence** \u2013 The model retrieves a set of top\u2011K passages and treats each passage as a single latent variable for the whole output. The same retrieved document is used to generate every token of the target sequence, and the probability of the full sequence is obtained by marginalising over the K documents (a top\u2011K approximation)\u202f[2][4].\n* **RAG\u2011Token** \u2013 Instead of fixing one document for the entire output, the model can draw a different latent document for each target token. For every token it marginalises over the K retrieved passages, allowing the generator to pull information from several documents within a single answer\u202f[2][4][1].\n\n**Key differences**\n1. **Document conditioning** \u2013 RAG\u2011Sequence conditions the whole sequence on one document; RAG\u2011Token conditions each token on potentially a different document.\n2. **Marginalisation** \u2013 RAG\u2011Sequence marginalises at the sequence level; RAG\u2011Token marginalises at the token level.\n3. **Decoding** \u2013 Because RAG\u2011Sequence\u2019s likelihood does not factor into per\u2011token terms, it cannot be decoded with a single beam search and requires special decoding strategies; RAG\u2011Token behaves like a standard autoregressive generator and can be decoded with ordinary beam search\u202f[6].\n\nThus, RAG\u2011Sequence uses a single retrieved passage for an entire answer, while RAG\u2011Token flexibly selects among retrieved passages for each token, leading to different inference and decoding procedures.",
+        "insufficient": false,
+        "cited": [
+          2,
+          4,
+          1,
+          6
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.95,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly states that RAG-Sequence uses the same retrieved document for the whole output sequence while RAG-Token can use a different document for each token, matching the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 16,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "r2",
+        "type": "single",
+        "answer": "The RAG model couples the Dense Passage Retriever (DPR) as its retriever with a pre\u2011trained seq2seq transformer \u2013 specifically BART \u2013 as its generator [4][5].",
+        "insufficient": false,
+        "cited": [
+          4,
+          5
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 1.78,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly identifies both the Dense Passage Retriever (DPR) as the retriever and BART as the generator, matching the reference answer.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 3,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "r3",
+        "type": "single",
+        "answer": "RAG\u2019s retriever pulls passages from a non\u2011parametric knowledge base that consists of a single Wikipedia dump (the December\u202f2018 dump).  For indexing, each Wikipedia article is broken into disjoint 100\u2011word chunks, producing roughly 21\u202fmillion separate documents that the retriever can select from.\n\n[1]",
+        "insufficient": false,
+        "cited": [
+          1
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 1.94,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly identifies the December 2018 Wikipedia dump as the knowledge source and accurately describes the splitting into disjoint 100-word chunks yielding about 21 million documents, matching all key facts in the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 6,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "r4",
+        "type": "single",
+        "answer": "A RAG model\u2019s knowledge can be refreshed simply by swapping out its non\u2011parametric memory \u2013 the external document index used by the retriever \u2013 with a newer index.  Because the generator accesses retrieved passages at inference time, replacing (or \u201chot\u2011swapping\u201d) the retrieval index updates the factual content the model sees without any further training of the parametric components [1][4][5].",
+        "insufficient": false,
+        "cited": [
+          1,
+          4,
+          5
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 1.79,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly identifies that a RAG model's knowledge can be updated by swapping its non-parametric memory (the document index) without retraining, which matches the reference answer.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 4,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "re1",
+        "type": "single",
+        "answer": "The ReAct prompting approach instructs a language model to output **both verbal reasoning traces and concrete actions**, interleaved with each other as it works through a task[4].",
+        "insufficient": false,
+        "cited": [
+          4
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 1.38,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly states that ReAct makes the model generate verbal reasoning traces and concrete actions in an interleaved manner, matching the key facts in the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 3,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "re2",
+        "type": "single",
+        "answer": "ReAct was evaluated on four benchmarks: the multi\u2011hop question\u2011answering dataset HotpotQA, the fact\u2011verification dataset FEVER, and two interactive decision\u2011making environments, ALFWorld and WebShop[1].",
+        "insufficient": false,
+        "cited": [
+          1
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 1.5,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant's answer lists all four benchmarks (HotpotQA, FEVER, ALFWorld, WebShop) and correctly categorizes them, matching the reference answer.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 0.8889,
+          "claims": 9,
+          "unsupported": [
+            "HotpotQA is a multi-hop question-answering dataset"
+          ]
+        }
+      },
+      {
+        "id": "re3",
+        "type": "single",
+        "answer": "For knowledge\u2011intensive tasks such as HotpotQA, ReAct interacts with a **Wikipedia API** to retrieve up\u2011to\u2011date information from the web[4].  The sources do not list the specific actions (e.g., search, lookup, browse) that ReAct can perform with this tool, so that part of the answer is missing.",
+        "insufficient": false,
+        "cited": [
+          4
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.11,
+        "abstained": false,
+        "correctness": {
+          "verdict": "partially_correct",
+          "score": 0.5,
+          "reason": "The assistant correctly identifies the Wikipedia API as the tool, but fails to list the specific actions (search, lookup, finish) that the question asks about, explicitly stating that part is missing.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 0.6667,
+          "claims": 3,
+          "unsupported": [
+            "ReAct retrieves up-to-date information from the web"
+          ]
+        }
+      },
+      {
+        "id": "re4",
+        "type": "single",
+        "answer": "ReAct achieved an absolute success\u2011rate gain of **34\u202f% on ALFWorld** and **10\u202f% on WebShop** compared with the best imitation\u2011learning or reinforcement\u2011learning baselines.\n\n- ALFWorld: ReAct\u2019s one\u2011 or two\u2011shot prompting outperformed IL/RL methods by 34\u202f% in success rate[1].\n- WebShop: ReAct\u2019s prompting gave a 10\u202f% absolute improvement over the prior best IL/RL success rate[1][6].",
+        "insufficient": false,
+        "cited": [
+          1,
+          6
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.79,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant's answer correctly states the 34% improvement on ALFWorld and 10% on WebShop, matching the reference answer's key facts.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 4,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "l1",
+        "type": "single",
+        "answer": "LoRA reduces the number of trainable parameters by **freezing the original pretrained weights** and **adding only low\u2011rank \u201cadapter\u201d matrices** to each Transformer layer.  Instead of updating the full weight matrix \\(W\\) (which has \\(d\\times d\\) parameters), LoRA re\u2011parameterises it as \\(W = W_{0} + BA\\), where \\(W_{0}\\) is kept fixed and \\(A\\in\\mathbb{R}^{d\\times r}\\) and \\(B\\in\\mathbb{R}^{r\\times d}\\) are trainable with a small rank \\(r\\) (often \\(r\\ll d\\)).  Only the entries of \\(A\\) and \\(B\\) are learned, so the number of trainable parameters is reduced from \\(d^{2}\\) to roughly \\(2dr\\).  In practice this yields reductions of up to **10,000\u2011fold** in trainable parameters and cuts GPU memory use by a factor of three, while keeping inference latency unchanged because the final weight \\(W\\) can be pre\u2011computed as \\(W_{0}+BA\\) [1][2][3].  The method is typically applied to a subset of weights (e.g., the attention matrices) while freezing the MLP modules, further improving parameter efficiency [4].",
+        "insufficient": false,
+        "cited": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 7.41,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The answer correctly states that LoRA freezes pretrained weights and injects trainable low-rank matrices (W0 + BA with r << d) into Transformer layers, matching all key facts in the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 0.75,
+          "claims": 16,
+          "unsupported": [
+            "A is a matrix of dimension d\u00d7r and B is a matrix of dimension r\u00d7d",
+            "The rank r is small, often r << d",
+            "The number of trainable parameters is reduced from d\u00b2 to roughly 2dr",
+            "LoRA keeps inference latency unchanged because the final weight W can be pre-computed as W0 + BA"
+          ]
+        }
+      },
+      {
+        "id": "l2",
+        "type": "single",
+        "answer": "LoRA cuts the number of trainable parameters for GPT\u20113\u202f175B by about **10,000\u202f\u00d7** and lowers the GPU memory needed for fine\u2011tuning by roughly **3\u202f\u00d7** compared with full fine\u2011tuning.",
+        "insufficient": false,
+        "cited": [
+          1
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.58,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant's answer matches the reference exactly, stating a 10,000x reduction in trainable parameters and a 3x reduction in GPU memory.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 2,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "l3",
+        "type": "single",
+        "answer": "LoRA does **not** add inference latency relative to a fully fine\u2011tuned model.  The low\u2011rank update matrices (\u202fB\u202fA\u202f) are merged with the frozen pretrained weight matrix (\u202fW\u2080\u202f) after training, so the deployed model uses a single weight matrix\u202fW\u202f=\u202fW\u2080\u202f+\u202fBA\u202fand runs exactly the same forward\u2011pass computation as a model that was fine\u2011tuned end\u2011to\u2011end.  By construction this yields \u201cno additional inference latency\u201d compared with full fine\u2011tuning[1][3][4].",
+        "insufficient": false,
+        "cited": [
+          1,
+          3,
+          4
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.26,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly states that LoRA does not add inference latency because the low-rank matrices are merged into the frozen weights (W = W0 + BA), matching the reference answer.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 5,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "l4",
+        "type": "single",
+        "answer": "In its experiments the LoRA paper applies low\u2011rank adapters only to the self\u2011attention projection matrices for the query and value streams \u2013 i.e., the weight matrices **Wq** and **Wv** \u2013 while keeping the other attention matrices (Wk, Wo) and the MLP layers frozen[2][1].",
+        "insufficient": false,
+        "cited": [
+          2,
+          1
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 1.77,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The answer correctly identifies that LoRA adapts the attention weight matrices (specifically Wq and Wv) and freezes the MLP modules, matching the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 3,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "l5",
+        "type": "single",
+        "answer": "The provided sources do not contain information about how the LoRA matrices\u202fA\u202fand\u202fB are initialized.",
+        "insufficient": true,
+        "cited": [],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 1.5,
+        "abstained": true,
+        "correctness": {
+          "verdict": "incorrect",
+          "score": 0.0,
+          "reason": "The assistant claims the sources don't cover the initialization, but the reference clearly states A is Gaussian and B is zero.",
+          "prompt_version": 2
+        }
+      },
+      {
+        "id": "c1",
+        "type": "single",
+        "answer": "Chain\u2011of\u2011thought prompting is a prompting technique that supplies a few\u2011shot prompt containing examples of the form\u202f\u27e8input, **chain of thought**, output\u27e9, where the **chain of thought** is a series of intermediate natural\u2011language reasoning steps that lead to the final answer. By providing these step\u2011by\u2011step demonstrations, the model is induced to generate its own intermediate reasoning before producing the final output, which improves performance on complex reasoning tasks.\n\nSources: [4][5]",
+        "insufficient": false,
+        "cited": [
+          4,
+          5
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.62,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant's answer accurately captures all key facts from the reference: few-shot exemplars, intermediate natural-language reasoning steps, and eliciting step-by-step reasoning.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 6,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "c2",
+        "type": "single",
+        "answer": "According to the paper, PaLM\u202f540B with chain\u2011of\u2011thought prompting achieved a new state\u2011of\u2011the\u2011art result on the GSM8K math word\u2011problem benchmark, surpassing the prior supervised best. The exact solve\u2011rate percentage is shown in Figure\u202f4 of the paper, but the numeric value is not given in the text excerpts provided.\n\n* The paper states that \u201cPaLM\u202f540B uses chain\u2011of\u2011thought prompting to achieve new state\u2011of\u2011the\u2011art performance on the GSM8K benchmark\u201d [3][2].\n* It also notes that \u201cperformance more than doubled for the largest GPT and PaLM models\u201d on GSM8K [5].\n\nThus, the answer is that PaLM\u202f540B with chain\u2011of\u2011thought prompting achieved a new state\u2011of\u2011the\u2011art performance on GSM8K, but the precise solve\u2011rate figure is not available in the supplied sources.",
+        "insufficient": true,
+        "cited": [
+          3,
+          2,
+          5
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 3.89,
+        "abstained": false,
+        "correctness": {
+          "verdict": "partially_correct",
+          "score": 0.5,
+          "reason": "The answer correctly states that PaLM 540B with chain-of-thought prompting achieved state-of-the-art performance on GSM8K, but it omits the key detail from the reference that it surpassed even fine-tuned GPT-3 with a verifier using only eight chain-of-thought exemplars.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 4,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "c3",
+        "type": "single",
+        "answer": "Chain\u2011of\u2011thought (CoT) prompting does not help small language models, but becomes beneficial once the model reaches roughly 100\u202fbillion parameters.  In models below this scale CoT gives little or no performance gain, while models of ~100\u202fB and larger show clear improvements over standard prompting, and the gains grow with size \u2013 the largest models (e.g., PaLM\u202f540\u202fB) exhibit the biggest jumps in accuracy compared with standard prompting[2].  This pattern reflects an emergent ability of CoT that appears only at sufficient scale and leads to dramatically increasing scaling curves for many reasoning tasks[4].",
+        "insufficient": false,
+        "cited": [
+          2,
+          4
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 1.87,
+        "abstained": false,
+        "correctness": {
+          "verdict": "partially_correct",
+          "score": 0.5,
+          "reason": "The answer correctly identifies CoT as an emergent ability that helps only at ~100B parameters, but it omits the key fact that CoT can hurt smaller models, stating only that it gives \"little or no performance gain.\"",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 0.875,
+          "claims": 8,
+          "unsupported": [
+            "The largest models (e.g., PaLM 540B) exhibit the biggest jumps in accuracy compared with standard prompting"
+          ]
+        }
+      },
+      {
+        "id": "m1",
+        "type": "multi",
+        "answer": "**ReAct** and **chain\u2011of\u2011thought (CoT) prompting** are two distinct ways of getting large language models to reason, but they differ in purpose, mechanism, and empirical behavior.\n\n| Aspect | ReAct | Chain\u2011of\u2011thought |\n|--------|-------|-------------------|\n| **Core idea** | Synergizes *reasoning* with *acting*: the model interleaves internal reasoning steps with external actions (e.g., API calls, environment interactions) to solve tasks. | Elicits a *chain of natural\u2011language reasoning steps* that lead to the final answer, without any explicit action component. [4]\n| **Typical prompt format** | Prompts contain both thought traces and action commands, producing a trajectory that can be inspected and diagnosed. | Prompts consist of triples \u27e8input, chain\u2011of\u2011thought, output\u27e9, where the chain\u2011of\u2011thought is a series of intermediate reasoning sentences. [4]\n| **Reasoning style** | Includes high\u2011level goal decomposition and commonsense reasoning that guide when sub\u2011goals are finished and what to do next. This internal reasoning is coupled with external feedback from actions. [1] | Purely internal, step\u2011by\u2011step linguistic reasoning; the model generates a linear sequence of thoughts before the answer. [2]\n| **Interaction with environment** | Designed to *act* in external environments (e.g., web, simulated worlds). This enables the model to retrieve information or manipulate objects, but also raises safety concerns. [9]\n| **Performance vs. other prompting** | Outperforms an IM\u2011style (internal\u2011memory) prompting baseline (71\u202f% vs\u202f53\u202f% success) and works across model families (PaLM\u2011540B and GPT\u20113). [1][3] | Improves dramatically over standard prompting on arithmetic, commonsense, and symbolic benchmarks, especially as model size grows; it yields upward\u2011scaling curves where standard prompting is flat. [2][8]\n| **Generalization** | Handles tasks that require external knowledge access and sub\u2011goal tracking; benefits from combining internal knowledge with external actions. [5][7]\n| **OOD / length generalization** | Not explicitly reported in the sources. | Facilitates out\u2011of\u2011distribution generalization to longer reasoning chains and to tasks requiring symbolic reasoning. [2][10]\n| **Finetuning vs. prompting** | When finetuned, ReAct surpasses standard and CoT finetuning, learning to both reason and act more effectively. [5][7]\n| **Robustness to few\u2011shot exemplars** | Not discussed. | Robust to the number of few\u2011shot examples; improvements persist across different exemplar counts. [6]\n\n**Summary**: ReAct extends prompting by coupling reasoning with concrete actions, enabling models to interact with external tools and environments and to decompose goals hierarchically. Chain\u2011of\u2011thought prompting, by contrast, focuses solely on eliciting multi\u2011step internal reasoning expressed in natural language, leading to strong scaling benefits and better OOD generalization but without any action capability.\n\n**What the sources do not cover**: Direct quantitative comparison of ReAct and CoT on the same tasks, detailed analysis of their relative sample efficiency, and any limitations of CoT related to acting or external feedback are not provided in the cited material.",
+        "insufficient": false,
+        "cited": [
+          4,
+          1,
+          2,
+          9,
+          3,
+          8,
+          5,
+          7,
+          10,
+          6
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 4.53,
+        "abstained": false,
+        "correctness": {
+          "verdict": "partially_correct",
+          "score": 0.5,
+          "reason": "The answer correctly contrasts ReAct's interleaving of reasoning with external actions against CoT's purely internal reasoning, but it omits the reference's key point that CoT's reliance on internal knowledge can lead to hallucination.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 17,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "m2",
+        "type": "multi",
+        "answer": "LoRA adapts a frozen pre\u2011trained model by injecting trainable low\u2011rank matrices (A and B) that are added to the original weight matrices, so only the small\u2011rank updates are learned while the original parameters stay unchanged [1]. In contrast, Retrieval\u2011Augmented Generation (RAG) adapts a pre\u2011trained seq2seq model by coupling it with an external, non\u2011parametric memory (a dense vector index of Wikipedia) and a neural retriever; the generation is conditioned on passages retrieved from this memory, effectively augmenting the model with retrieved information rather than modifying its internal weights [2][3].",
+        "insufficient": false,
+        "cited": [
+          1,
+          2,
+          3
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.38,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant's answer accurately captures both key facts from the reference: RAG adds a non-parametric memory (retrieved document index) to a pre-trained seq2seq model, and LoRA keeps the model's weights frozen while learning low-rank update matrices.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 0.8182,
+          "claims": 11,
+          "unsupported": [
+            "The low-rank matrices are added to the original weight matrices",
+            "RAG augments the model with retrieved information rather than modifying its internal weights"
+          ]
+        }
+      },
+      {
+        "id": "m3",
+        "type": "multi",
+        "answer": "ReAct accesses Wikipedia through a **small, interactive web\u2011API**. The model can issue actions such as `search[entity]` (returning the first five sentences of a page) or `lookup[string]` (returning the next sentence that contains a string), mimicking a human\u2019s Ctrl\u2011F or page\u2011search behavior. These actions retrieve only a tiny fragment of a page, and the model\u2019s **reasoning steps decide which action to take next**, creating a tight reasoning\u2011acting loop[1][7]. \n\nIn contrast, Retrieval\u2011Augmented Generation (RAG) treats Wikipedia as a **static, pre\u2011processed knowledge base**. A December\u20112018 Wikipedia dump is split into 100\u2011word chunks (\u224821\u202fM documents), each embedded by a document encoder and indexed with FAISS for fast nearest\u2011neighbor search. At inference the model simply retrieves the top\u2011k chunks (e.g., 5 or 10) for a query, without an interactive reasoning\u2011driven retrieval process[2][2]. \n\nThus, ReAct\u2019s use of Wikipedia is **action\u2011driven, sentence\u2011level, and guided by on\u2011the\u2011fly reasoning**, whereas RAG\u2019s use is **batch\u2011indexed, chunk\u2011level, and relies on dense vector retrieval rather than explicit reasoning steps**.",
+        "insufficient": false,
+        "cited": [
+          1,
+          7,
+          2
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.93,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant's answer captures both key facts from the reference: ReAct uses an interactive API (search, lookup) in a reasoning-action loop, while RAG retrieves from a pre-built dense index over a Wikipedia dump.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 17,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "m4",
+        "type": "multi",
+        "answer": "In the Transformer, attention is the core mechanism that replaces recurrence and convolution: it lets the model capture dependencies between any pair of positions regardless of their distance, thereby drawing global relationships between input and output sequences [4].\n\nLoRA is applied only to the weight matrices of the self\u2011attention block. It adapts the query, key, value, and output projection matrices\u2014denoted\u202fWq,\u202fWk,\u202fWv, and\u202fWo\u2014while keeping the rest of the model (e.g., the MLP layers) frozen [1][7].",
+        "insufficient": false,
+        "cited": [
+          4,
+          1,
+          7
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.58,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The answer correctly states that attention replaces recurrence in the Transformer and that LoRA adapts the attention projection matrices (query, key, value, output), which includes the query and value projections named in the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 0.8571,
+          "claims": 7,
+          "unsupported": [
+            "In the Transformer, attention replaces convolution"
+          ]
+        }
+      },
+      {
+        "id": "u1",
+        "type": "unanswerable",
+        "answer": "The provided sources do not contain information about the capital of Australia.",
+        "insufficient": true,
+        "cited": [],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 1.24,
+        "abstained": true
+      },
+      {
+        "id": "u2",
+        "type": "unanswerable",
+        "answer": "The provided sources do not contain information about the learning rate used to train GPT\u20114.",
+        "insufficient": true,
+        "cited": [],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 1.67,
+        "abstained": true
+      },
+      {
+        "id": "u3",
+        "type": "unanswerable",
+        "answer": "The provided sources do not contain information about the Mamba selective state space model, so I cannot answer the question.",
+        "insufficient": true,
+        "cited": [],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 1.7,
+        "abstained": true
+      },
+      {
+        "id": "u4",
+        "type": "unanswerable",
+        "answer": "The provided sources do not contain information about who won the 2022 FIFA World Cup.",
+        "insufficient": true,
+        "cited": [],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 3.81,
+        "abstained": true
+      }
+    ]
+  },
+  "2 rounds (self-correcting)": {
+    "meta": {
+      "date": "2026-10-10 13:57 UTC",
+      "llm": "groq/openai/gpt-oss-120b",
+      "embedding_model": "BAAI/bge-small-en-v1.5",
+      "reranker_model": "Xenova/ms-marco-MiniLM-L-6-v2",
+      "chunk_size": 1000,
+      "chunk_overlap": 150,
+      "mode": "hybrid",
+      "max_rounds": 2,
+      "judge": "groq/qwen/qwen3.8-27b",
+      "judge_prompt": 2
+    },
+    "complete": true,
+    "summary": {
+      "questions": 29,
+      "errors": 0,
+      "correctness": 0.88,
+      "fully_correct": 0.8,
+      "faithfulness": 0.949,
+      "answers_with_citations": 1.0,
+      "invalid_citation_rate": 0.0,
+      "false_abstention_rate": 0.04,
+      "abstention_accuracy": 1.0,
+      "retried": 0.2069,
+      "latency_s_p50": 3.53,
+      "latency_s_p95": 10.4
+    },
+    "details": [
+      {
+        "id": "t1",
+        "type": "single",
+        "answer": "The base Transformer uses **8 attention heads**, and each head has a dimensionality of **64** (since dk = dv = dmodel/h = 64)[2].",
+        "insufficient": false,
+        "cited": [
+          2
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 9.86,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly states 8 attention heads and a dimension of 64 per head, matching the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 2,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "t2",
+        "type": "single",
+        "answer": "The big Transformer achieved a BLEU score of **28.4** on the WMT\u202f2014 English\u2011to\u2011German translation task.",
+        "insufficient": false,
+        "cited": [
+          1,
+          3,
+          4
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.64,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly states the 28.4 BLEU score for the big Transformer on WMT 2014 English-to-German, which is the key fact the question asks for.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 1,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "t3",
+        "type": "single",
+        "answer": "In the Transformer the raw dot\u2011product between a query and a key grows with the dimensionality\u202f$d_k$.  If the components of $q$ and $k$ are independent with mean\u202f0 and variance\u202f1, the dot\u2011product $q\\cdot k$ has variance $d_k$ [5].  As $d_k$ becomes large the dot\u2011products become large in magnitude, which pushes the subsequent soft\u2011max into regions where its gradients are extremely small, making learning difficult.  To keep the scale of the scores roughly constant (variance \u2248\u202f1) and preserve useful gradients, the authors divide the dot\u2011product by $\\sqrt{d_k}$ before applying soft\u2011max [1].",
+        "insufficient": false,
+        "cited": [
+          5,
+          1
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 8.49,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The answer correctly states that large d_k makes dot products large in magnitude, pushing softmax into regions with extremely small gradients, and that scaling by 1/sqrt(d_k) counteracts this, matching the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 0.7143,
+          "claims": 7,
+          "unsupported": [
+            "This makes learning difficult",
+            "The purpose of the scaling is to keep the scale of the scores roughly constant (variance \u2248 1) and preserve useful gradients"
+          ]
+        }
+      },
+      {
+        "id": "t4",
+        "type": "single",
+        "answer": "The Transformer supplies order information by **adding a positional encoding vector to each token embedding** before the first encoder and decoder layer.  The encoding has the same dimensionality as the word embedding so the two can be summed element\u2011wise.  In the original model the encoding is a fixed sinusoidal function of the token\u2019s position:\n\n- \\(PE_{(pos,2i)} = \\sin\\bigl(pos / 10000^{2i/d_{model}}\\bigr)\\)\n- \\(PE_{(pos,2i+1)} = \\cos\\bigl(pos / 10000^{2i/d_{model}}\\bigr)\\)\n\nwhere *pos* is the token\u2019s position and *i* indexes the dimension.  The paper also notes that learned positional embeddings can be used instead, yielding similar performance.\n\n**Sources**: [3] describes the need to inject position information and the addition of positional encodings; [1] gives the exact sinusoidal formulation and mentions learned alternatives.",
+        "insufficient": false,
+        "cited": [
+          3,
+          1
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.7,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The answer correctly states that the Transformer adds positional encodings to input embeddings using sine and cosine functions of different frequencies, matching the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 8,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "t5",
+        "type": "single",
+        "answer": "The original Transformer was trained with the Adam optimizer (\u03b2\u2081\u202f=\u202f0.9, \u03b2\u2082\u202f=\u202f0.98, \u03b5\u202f=\u202f10\u207b\u2079) and a learning\u2011rate schedule that linearly increases the rate for the first\u202fwarmup_steps\u202fsteps (warmup_steps\u202f=\u202f4000) and then decays proportionally to the inverse square root of the step number: \\(\\text{lrate}=d_{model}^{-0.5}\\,\\min(step_{num}^{-0.5},\\,step_{num}\\,warmup_{steps}^{-1.5})\\).",
+        "insufficient": false,
+        "cited": [
+          3
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 3.06,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly identifies the Adam optimizer with the exact hyperparameters (\u03b2\u2081=0.9, \u03b2\u2082=0.98, \u03b5=1e-9) and the learning rate schedule (linear warmup for 4000 steps followed by inverse square root decay), matching all key facts in the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 8,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "r1",
+        "type": "single",
+        "answer": "RAG\u2011Sequence and RAG\u2011Token are two variants of Retrieval\u2011Augmented Generation that differ in how they treat the retrieved passages when generating text.  \n- **RAG\u2011Sequence** treats the retrieved passage as a single latent variable for the whole output. The same document is used to generate every token of the target sequence, and the model marginalises over the top\u2011K retrieved documents at the sequence level to obtain \\(p(y|x)\\) [1][4].  \n- **RAG\u2011Token** allows a different retrieved passage to be used for each target token. For every token the generator marginalises over the top\u2011K documents, so the content can be drawn from several documents across the sequence [1][2][4].  \n**Key differences**: RAG\u2011Sequence uses one document per generated sequence, which means its likelihood does not decompose into per\u2011token terms and requires a special decoding procedure (it cannot be solved with a single beam search) [7]. RAG\u2011Token marginalises per token, can be viewed as a standard autoregressive generator with a modified per\u2011token probability, and can be decoded with ordinary beam search [7].",
+        "insufficient": false,
+        "cited": [
+          1,
+          4,
+          2,
+          7
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 3.69,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly states that RAG-Sequence uses the same retrieved document for the whole output sequence while RAG-Token can use a different document for each token, matching the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 15,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "r2",
+        "type": "single",
+        "answer": "The RAG model combines the Dense Passage Retriever (DPR) as its retriever and a pre\u2011trained seq2seq transformer \u2013 specifically BART \u2013 as its generator.",
+        "insufficient": false,
+        "cited": [
+          2,
+          4
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.76,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly identifies both the Dense Passage Retriever (DPR) as the retriever and BART as the seq2seq generator, matching the reference answer.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 0.6667,
+          "claims": 3,
+          "unsupported": [
+            "BART is a pre-trained seq2seq transformer"
+          ]
+        }
+      },
+      {
+        "id": "r3",
+        "type": "single",
+        "answer": "RAG\u2019s non\u2011parametric knowledge source is a single Wikipedia dump. For retrieval, each Wikipedia article is broken into disjoint 100\u2011word chunks, producing roughly 21\u202fmillion separate documents that are indexed for fast lookup.[1]",
+        "insufficient": false,
+        "cited": [
+          1
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 45.06,
+        "abstained": false,
+        "correctness": {
+          "verdict": "partially_correct",
+          "score": 0.5,
+          "reason": "The answer correctly identifies the knowledge source as a Wikipedia dump and the 100-word chunking into ~21 million documents, but it omits the specific \"December 2018\" date and the FAISS indexing detail from the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 4,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "r4",
+        "type": "single",
+        "answer": "A RAG model\u2019s knowledge resides in its non\u2011parametric memory (the retrieval index of documents). To update that knowledge you can simply replace or \u201chot\u2011swap\u201d the index with a new set of up\u2011to\u2011date documents, leaving the parametric generator unchanged. This changes what the model retrieves at inference time and therefore updates its factual content without any further training of the model itself [1][3].",
+        "insufficient": false,
+        "cited": [
+          1,
+          3
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.6,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly identifies that the RAG model's knowledge can be updated by replacing/hot-swapping its non-parametric memory (the document index) without retraining, which matches the reference answer.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 5,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "re1",
+        "type": "single",
+        "answer": "The ReAct prompting approach instructs a language model to generate **both verbal reasoning traces and action statements**, interleaved with each other as it works on a task.\n\nSource: [4]",
+        "insufficient": false,
+        "cited": [
+          4
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.71,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly states that ReAct makes the model generate reasoning traces and actions in an interleaved manner, matching the key facts in the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 4,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "re2",
+        "type": "single",
+        "answer": "ReAct was evaluated on four benchmarks: the multi\u2011hop question\u2011answering dataset HotpotQA, the fact\u2011verification dataset FEVER, and two interactive decision\u2011making environments, ALFWorld and WebShop[1].",
+        "insufficient": false,
+        "cited": [
+          1
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.43,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant's answer lists all four benchmarks (HotpotQA, FEVER, ALFWorld, WebShop) and correctly categorizes them, matching the reference answer.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 0.8889,
+          "claims": 9,
+          "unsupported": [
+            "HotpotQA is a multi-hop question-answering dataset"
+          ]
+        }
+      },
+      {
+        "id": "re3",
+        "type": "single",
+        "answer": "ReAct tackles knowledge\u2011intensive tasks (e.g., HotpotQA) by interacting with a simple Wikipedia web API \u2013 essentially a Wikipedia\u202fAPI that the model can call for information. The API exposes three actions: **search[entity]**, which returns the first five sentences of the requested Wikipedia page (or top\u20115 similar entities if the page does not exist); **lookup[string]**, which returns the next sentence in the page that contains the given string (simulating a browser \u201cCtrl+F\u201d); and **finish[answer]**, which ends the episode by outputting the final answer.\n\n**Sources**: [1] describes the use of a Wikipedia API for HotpotQA; [11] lists the three supported actions.",
+        "insufficient": false,
+        "cited": [
+          1,
+          11
+        ],
+        "invalid_citations": [],
+        "rounds": 2,
+        "seconds": 3.26,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly identifies the Wikipedia API and all three actions (search[entity], lookup[string], finish[answer]) as stated in the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 8,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "re4",
+        "type": "single",
+        "answer": "ReAct achieved an absolute success\u2011rate gain of **34\u202f% on ALFWorld** and **10\u202f% on WebShop** compared with the best imitation\u2011learning or reinforcement\u2011learning baselines trained on 10\u00b3\u201310\u2075 task instances[1][2][6].",
+        "insufficient": false,
+        "cited": [
+          1,
+          2,
+          6
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 3.53,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly states the 34% improvement on ALFWorld and 10% on WebShop, matching the reference's key facts.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 3,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "l1",
+        "type": "single",
+        "answer": "LoRA keeps the pretrained weight matrix **W** fixed and represents any task\u2011specific change as a low\u2011rank product **\u0394W = B\u00b7A**.  Only the two small matrices **A** (size d\u202f\u00d7\u202fr) and **B** (size r\u202f\u00d7\u202fd) are learned, where the rank **r** is chosen to be far smaller than the original dimension **d** (e.g., r\u202f\u226a\u202fd).  Because the number of trainable parameters becomes\u202fd\u00b7r\u202f+\u202fr\u00b7d\u202f\u2248\u202f2\u202fd\u202fr instead of the full d\u00b2 of the original matrix, the total trainable parameter count drops dramatically \u2013 the paper reports up to a 10,000\u2011fold reduction for GPT\u20113\u2011175B and a three\u2011fold drop in GPU memory use [1][2][3][5].  By inserting these low\u2011rank matrices into each Transformer layer and freezing the rest of the model, LoRA achieves task adaptation with far fewer trainable parameters while preserving inference speed.",
+        "insufficient": false,
+        "cited": [
+          1,
+          2,
+          3,
+          5
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 3.12,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The answer correctly states that LoRA freezes pretrained weights and injects trainable low-rank matrices (B\u00b7A) into Transformer layers with rank r much smaller than the dimension, matching all key facts in the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 0.7143,
+          "claims": 14,
+          "unsupported": [
+            "Matrix A has size d \u00d7 r.",
+            "Matrix B has size r \u00d7 d.",
+            "The rank r is chosen to be far smaller than the original dimension d (r \u226a d).",
+            "The number of trainable parameters becomes d\u00b7r + r\u00b7d \u2248 2dr instead of the full d\u00b2 of the original matrix."
+          ]
+        }
+      },
+      {
+        "id": "l2",
+        "type": "single",
+        "answer": "LoRA cuts the number of trainable parameters by about **10,000\u202f\u00d7** and lowers the GPU memory needed by roughly **3\u202f\u00d7** compared with full fine\u2011tuning of GPT\u20113\u202f175B[1].",
+        "insufficient": false,
+        "cited": [
+          1
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.6,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant's answer matches the reference exactly, stating that LoRA reduces trainable parameters by about 10,000 times and GPU memory by about 3 times.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 2,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "l3",
+        "type": "single",
+        "answer": "LoRA does **not** add inference latency compared with a fully fine\u2011tuned model.  The low\u2011rank adaptation matrices are merged with the original frozen weight matrix (e.g.,\u202fW\u202f=\u202fW\u2080\u202f+\u202fBA) before deployment, so inference uses a single weight matrix exactly as in a fully fine\u2011tuned model.  By construction this merging introduces no extra computation or latency at inference time[1][3][4].",
+        "insufficient": false,
+        "cited": [
+          1,
+          3,
+          4
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 4.09,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly states that LoRA does not add inference latency because the low-rank matrices are merged into the frozen weights (W = W0 + BA) for deployment, matching the reference answer.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 4,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "l4",
+        "type": "single",
+        "answer": "In its experiments the paper applies LoRA only to the self\u2011attention projection matrices \u2013 specifically the query matrix **Wq** and the value matrix **Wv** \u2013 while freezing the other attention weights (Wk,\u202fWo) and the MLP layers[2]. The authors note that LoRA can in principle be applied to any subset of weight matrices, but they restrict themselves to adapting these two attention matrices for simplicity and parameter\u2011efficiency[1].",
+        "insufficient": false,
+        "cited": [
+          2,
+          1
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 3.28,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant correctly identifies that LoRA adapts the attention weights (specifically Wq and Wv) and freezes the MLP modules, matching the reference answer.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 0.875,
+          "claims": 8,
+          "unsupported": [
+            "The authors restrict themselves to adapting these two attention matrices (Wq and Wv) for parameter-efficiency."
+          ]
+        }
+      },
+      {
+        "id": "l5",
+        "type": "single",
+        "answer": "The provided sources do not contain information about how the LoRA matrices A and B are initialized.",
+        "insufficient": true,
+        "cited": [],
+        "invalid_citations": [],
+        "rounds": 2,
+        "seconds": 2.96,
+        "abstained": true,
+        "correctness": {
+          "verdict": "incorrect",
+          "score": 0.0,
+          "reason": "The assistant claims the sources don't contain the information, but the reference clearly states A is Gaussian-initialized and B is zero-initialized.",
+          "prompt_version": 2
+        }
+      },
+      {
+        "id": "c1",
+        "type": "single",
+        "answer": "Chain\u2011of\u2011thought prompting is a prompting method that supplies the model with few\u2011shot examples formatted as <input, **chain of thought**, output>. The \u201cchain of thought\u201d is a series of intermediate natural\u2011language reasoning steps that lead to the final answer, and the model is prompted to generate such reasoning before producing its output [4][5].",
+        "insufficient": false,
+        "cited": [
+          4,
+          5
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 8.09,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The answer captures all key facts from the reference: few-shot exemplars, intermediate natural-language reasoning steps leading to the answer, and that it elicits step-by-step reasoning.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 4,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "c2",
+        "type": "single",
+        "answer": "PaLM\u202f540B, when used with chain\u2011of\u2011thought prompting, achieved a new state\u2011of\u2011the\u2011art solve rate on the GSM8K math\u2011word\u2011problem benchmark, outperforming the prior best results.\n\nSources [2] and [3] report that chain\u2011of\u2011thought prompting with PaLM\u202f540B \u201cachieves new state\u2011of\u2011the\u2011art performance on the GSM8K benchmark,\u201d and source [6] notes the same, emphasizing the large margin over standard prompting. Source [7] also states that this model \u201cachieves new state of the art on the challenging GSM8K benchmark.\u201d",
+        "insufficient": false,
+        "cited": [
+          2,
+          3,
+          6,
+          7
+        ],
+        "invalid_citations": [],
+        "rounds": 2,
+        "seconds": 3.8,
+        "abstained": false,
+        "correctness": {
+          "verdict": "partially_correct",
+          "score": 0.5,
+          "reason": "The answer correctly states that PaLM 540B with chain-of-thought prompting achieved state-of-the-art performance on GSM8K, but it omits the key detail from the reference that it surpassed even fine-tuned GPT-3 with a verifier using only eight chain-of-thought exemplars.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 5,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "c3",
+        "type": "single",
+        "answer": "Chain\u2011of\u2011thought (CoT) prompting only helps once the model is large enough.  The papers report that CoT is an *emergent* ability of scale \u2013 it gives no performance boost for small models and starts to improve results at roughly the 100\u202fbillion\u2011parameter range [2].  As model size grows further, the gains become larger: for many tasks where standard prompting plateaus, CoT produces a sharply rising scaling curve, and the biggest improvements are seen with the biggest models (e.g., PaLM\u202f540\u202fB shows the largest gains among the sizes tested) [4][5].",
+        "insufficient": false,
+        "cited": [
+          2,
+          4,
+          5
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 10.4,
+        "abstained": false,
+        "correctness": {
+          "verdict": "partially_correct",
+          "score": 0.5,
+          "reason": "The answer correctly identifies CoT as an emergent ability that helps around 100B parameters, but it omits the key fact that CoT can hurt smaller models, instead saying it gives \"no performance boost.\"",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 8,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "m1",
+        "type": "multi",
+        "answer": "**ReAct**\n- A prompting paradigm that interleaves *reasoning* (natural\u2011language thoughts) with *acting* (explicit action calls) so that the model can both plan and interact with an environment\u202f[1][9].\n- It encourages high\u2011level goal decomposition and commonsense reasoning, which helps the model know when sub\u2011goals are finished and what to do next\u202f[1].\n- ReAct works across different LLMs (PaLM\u2011540B, GPT\u20113) and shows strong success rates on tasks such as HotpotQA and ALFWorld\u202f[3].\n- When fine\u2011tuned, ReAct outperforms standard prompting and chain\u2011of\u2011thought (CoT) fine\u2011tuning, because it teaches the model to *reason and act* rather than merely memorize facts\u202f[5][7].\n- The trajectories it generates are more interpretable, diagnosable, and controllable than prior methods\u202f[9].\n\n**Chain\u2011of\u2011Thought (CoT) Prompting**\n- A few\u2011shot prompting format that provides examples of the form\u202f\u27e8input, *chain of thought*, output\u27e9, where the chain of thought is a series of intermediate natural\u2011language reasoning steps\u202f[4].\n- CoT is elicited purely by prompting (no fine\u2011tuning) and improves performance on arithmetic, commonsense, and symbolic reasoning benchmarks\u202f[4][2].\n- The benefit grows with model scale: large models (\u2248100\u202fB parameters) suddenly exhibit CoT abilities, leading to dramatically steeper scaling curves compared with standard prompting\u202f[2][8][10].\n- CoT also helps with out\u2011of\u2011distribution generalization to longer reasoning sequences\u202f[2][10] and is robust to the number of few\u2011shot exemplars in the prompt\u202f[6].\n\n**Key Comparisons**\n| Aspect | ReAct | Chain\u2011of\u2011Thought |\n|---|---|---|\n| **Primary output** | Reasoning *plus* explicit actions (e.g., `Search[query]`, `Move[object]`) | Purely textual reasoning steps ending in an answer |\n| **Goal** | Solve tasks that require interaction with an external environment (web, simulated worlds) | Solve reasoning\u2011only tasks (arithmetic, commonsense, symbolic) |\n| **Training requirement** | Works with prompting, but fine\u2011tuning yields large gains over CoT and standard prompting\u202f[5][7] | Works effectively with prompting alone; fine\u2011tuning not required for the reported gains\u202f[2] |\n| **Performance pattern** | Outperforms IM\u2011style prompting and often CoT on interactive tasks; benefits from high\u2011level goal decomposition and external knowledge\u202f[1][7] | Provides upward scaling curves and OOD length generalization, especially for models \u2265100\u202fB parameters\u202f[2][10] |\n| **Interpretability** | Generates human\u2011interpretable, diagnosable trajectories that combine thoughts and actions\u202f[9] | Generates a readable chain of reasoning steps, but no explicit action trace |\n| **Limitations** | Prompt\u2011only ReAct can be harder to learn (needs more examples) and may lag behind CoT in pure reasoning benchmarks\u202f[7] | Does not handle environments that require actions; performance depends on model scale\u202f[8][10] |\n\nIn summary, ReAct extends CoT by adding an *action* component and by training (or fine\u2011tuning) the model to use both internal reasoning and external tools, making it suited for interactive tasks. CoT focuses on eliciting multi\u2011step reasoning purely in language, showing strong scaling benefits for reasoning\u2011only benchmarks.",
+        "insufficient": false,
+        "cited": [
+          1,
+          9,
+          3,
+          5,
+          7,
+          4,
+          2,
+          8,
+          10,
+          6
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 6.43,
+        "abstained": false,
+        "correctness": {
+          "verdict": "partially_correct",
+          "score": 0.5,
+          "reason": "The answer correctly contrasts ReAct's interleaving of reasoning with external actions against CoT's purely internal reasoning steps, but it omits the reference's key point that CoT's reliance on internal knowledge can lead to hallucination.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 31,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "m2",
+        "type": "multi",
+        "answer": "RAG adapts a pre\u2011trained language model by **adding a non\u2011parametric memory** (a dense vector index of documents) that is accessed with a neural retriever and then **fine\u2011tuning the whole system** so the seq\u2011to\u2011seq generator learns to condition on the retrieved passages.  The parametric part (the pre\u2011trained seq2seq model) remains the same, but the model is trained to use the external knowledge source, and the retrieval index can even be swapped without further training [1][3].\n\nLoRA adapts a pre\u2011trained model in a **parameter\u2011efficient way**: the original weights are **frozen** and **low\u2011rank trainable matrices (A and B)** are injected into each Transformer layer.  Only these added matrices are updated during downstream training, drastically reducing the number of trainable parameters while keeping inference identical to the original model [4][2].\n\nThus, RAG modifies the model\u2019s **knowledge source** (adding and learning to use external memory), whereas LoRA modifies the model\u2019s **parameter update strategy** (learning only low\u2011rank additions while keeping the base weights fixed).",
+        "insufficient": false,
+        "cited": [
+          1,
+          3,
+          4,
+          2
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 7.97,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant's answer correctly states that RAG adds a non-parametric memory (retrieved document index) to a pre-trained seq2seq model, and that LoRA keeps the model's weights frozen and learns low-rank update matrices, matching all key facts in the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 0.9167,
+          "claims": 12,
+          "unsupported": [
+            "LoRA keeps inference identical to the original model"
+          ]
+        }
+      },
+      {
+        "id": "m3",
+        "type": "multi",
+        "answer": "ReAct accesses Wikipedia through a **simple web\u2011API** that lets the model issue explicit actions such as `search[entity]` (returning the first five sentences of a page) or `lookup[string]` (simulating a Ctrl\u2011F search) and then continue reasoning based on the tiny snippet it receives[7].  The retrieval is therefore **interactive, step\u2011by\u2011step, and driven by the model\u2019s own reasoning**, and it can only fetch a small part of a passage at a time[3].  \n\nIn contrast, Retrieval\u2011Augmented Generation (RAG) treats Wikipedia as a **static, pre\u2011processed knowledge base**: a December 2018 Wikipedia dump is split into 100\u2011word chunks (\u224821\u202fM documents) and each chunk is embedded and indexed with FAISS for fast nearest\u2011neighbor search[2].  At inference RAG retrieves the top\u2011k (e.g., 5 or 10) chunks in one shot using dense similarity, and the index can be swapped out to update knowledge without retraining[10].  \n\nThus, ReAct\u2019s use of Wikipedia is **action\u2011based, incremental, and reasoning\u2011guided**, whereas RAG\u2019s use is **batch\u2011style, embedding\u2011based retrieval from a large indexed dump**.",
+        "insufficient": false,
+        "cited": [
+          7,
+          3,
+          2,
+          10
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 3.68,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The assistant's answer captures both key facts from the reference: ReAct uses interactive API-based actions (search, lookup) in a reasoning loop, while RAG retrieves from a pre-built dense index over a Wikipedia dump.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 16,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "m4",
+        "type": "multi",
+        "answer": "In the Transformer, attention replaces recurrence and convolution by directly modelling relationships between any pair of positions, allowing the model to capture **global dependencies** in the input and output sequences regardless of distance [[4](#source-4)][[6](#source-6)].\n\nLoRA is applied to the **self\u2011attention projection matrices** of the Transformer. The four weight matrices in the self\u2011attention block are the query, key, value, and output projections (\u202fWq,\u202fWk,\u202fWv,\u202fWo\u202f) [[1](#source-1)]. LoRA can be attached to any of these matrices; experiments show that adapting individual matrices (Wq, Wk, Wv, or Wo) or combinations thereof is possible, with the best downstream performance obtained when both **Wq and Wv** are adapted [[5](#source-5)].",
+        "insufficient": false,
+        "cited": [
+          4,
+          6,
+          1,
+          5
+        ],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 3.68,
+        "abstained": false,
+        "correctness": {
+          "verdict": "correct",
+          "score": 1.0,
+          "reason": "The answer correctly states that attention replaces recurrence in the Transformer and that LoRA adapts the attention projection matrices, specifically highlighting Wq and Wv as in the reference.",
+          "prompt_version": 2
+        },
+        "faithfulness": {
+          "score": 1.0,
+          "claims": 8,
+          "unsupported": []
+        }
+      },
+      {
+        "id": "u1",
+        "type": "unanswerable",
+        "answer": "The provided sources do not contain information about the capital of Australia.",
+        "insufficient": true,
+        "cited": [],
+        "invalid_citations": [],
+        "rounds": 2,
+        "seconds": 3.08,
+        "abstained": true
+      },
+      {
+        "id": "u2",
+        "type": "unanswerable",
+        "answer": "The provided sources do not contain information about the learning rate used to train GPT-4.",
+        "insufficient": true,
+        "cited": [],
+        "invalid_citations": [],
+        "rounds": 1,
+        "seconds": 2.76,
+        "abstained": true
+      },
+      {
+        "id": "u3",
+        "type": "unanswerable",
+        "answer": "The provided sources do not contain any information about the Mamba selective state space model, so I cannot answer the question.",
+        "insufficient": true,
+        "cited": [],
+        "invalid_citations": [],
+        "rounds": 2,
+        "seconds": 5.45,
+        "abstained": true
+      },
+      {
+        "id": "u4",
+        "type": "unanswerable",
+        "answer": "The provided sources do not contain information about who won the 2022 FIFA World Cup.",
+        "insufficient": true,
+        "cited": [],
+        "invalid_citations": [],
+        "rounds": 2,
+        "seconds": 3.76,
+        "abstained": true
+      }
+    ]
+  }
+}

@@ -217,6 +217,22 @@ def test_run_answers_refuses_a_checkpoint_from_another_configuration(fake_llm, t
         run_answers(DATA[:1], ask_fn=_scripted_ask([]), judge=fake_llm, checkpoint=checkpoint, max_rounds=2)
 
 
+def test_resumed_run_keeps_its_date_and_table_shows_each_runs_date(fake_llm, tmp_path):
+    fake_llm.responses = {"CorrectnessVerdict": [{"verdict": "correct", "reason": "ok"}]}
+    checkpoint = tmp_path / "answers.json"
+    run_answers(DATA[:1], ask_fn=_scripted_ask([]), judge=fake_llm, checkpoint=checkpoint, max_rounds=1)
+    saved = json.loads(checkpoint.read_text(encoding="utf-8"))
+    saved["meta"]["date"] = "2026-10-09 13:14 UTC"  # pretend it ran the day before
+    checkpoint.write_text(json.dumps(saved), encoding="utf-8")
+
+    first = run_answers(DATA[:1], ask_fn=_scripted_ask([]), judge=fake_llm, checkpoint=checkpoint, max_rounds=1)
+    assert first["meta"]["date"] == "2026-10-09 13:14 UTC"
+    second = {**first, "meta": {**first["meta"], "date": "2026-10-10 14:00 UTC"}}
+    table = answers_table({"1 round": first, "2 rounds": second})
+    assert "runs 1 round: 2026-10-09 13:14 UTC; 2 rounds: 2026-10-10 14:00 UTC" in table
+    assert "(prompt v2)" in table
+
+
 def test_declined_requires_no_citations():
     assert metrics.declined("The sources do not mention this.", True, [])
     # a cited answer that flags missing detail is still an answer, not an abstention

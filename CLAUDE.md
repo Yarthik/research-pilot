@@ -13,10 +13,9 @@ so these parts have NOT yet run against the real libraries and need verifying fi
 - The FastAPI app against a live server (`/docs`, `/ask/stream`, uploads); its tests pass with fakes
 - The Streamlit UI (`app/streamlit_app.py`), never rendered yet
 - The Dockerfile and docker-compose, never built yet
-- The answer eval (`python -m evals answers`), never run
 
 Already verified: pure-Python logic (chunking, BM25, RRF, citations, evidence selection, agent
-nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 116 fast tests
+nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 123 fast tests
 (`pytest -m "not slow"`) and 1 slow test (`pytest -m slow`) pass, `ruff` is clean, and
 `requirements.txt` is pinned to the versions that ran. Verified against the real libraries in
 Stage 1: ChromaDB calls in `retrieval/vector_store.py`, FastEmbed embeddings and reranker (slow
@@ -44,6 +43,16 @@ by rank across sub-queries so evidence trimming can't drop a whole sub-query. Ex
 in `evals/results/experiments/`; README "Findings" summarises them. Don't re-tune on these 25
 questions without a larger eval set.
 
+Stage 4: the answer eval ran on all 29 questions, 1 round (2026-10-09) and 2 rounds (2026-10-10),
+agent `openai/gpt-oss-120b`, judge `qwen/qwen3.8-27b` (set via `JUDGE_PROVIDER`/`JUDGE_MODEL` env
+vars), judge prompt v2. Both configs score 88% correctness; only 6 questions retried and only `re3`
+improved. Runs checkpoint to `evals/results/answers_<mode>_<n>round.json`, resume on re-run, and stop
+cleanly on 429/quota errors (including ones the agent swallows in its fallbacks). Judge prompt v1
+penalised reference details the question didn't ask for; `python -m evals rejudge` re-grades saved
+answers. Known issue: gpt-oss on Groq sometimes returns JSON text instead of a tool call for
+structured output (`tool_use_failed`, 3 grade steps in the 2-round run); `method="json_schema"` in
+`llm.structured` is the likely fix, but changing it means re-running both configs.
+
 ## Commands
 
 ```bash
@@ -56,7 +65,8 @@ python -m researchpilot ask "How does LoRA reduce the number of trainable parame
 streamlit run app/streamlit_app.py
 uvicorn researchpilot.api.main:app --port 8000
 python -m evals retrieval --update-readme
-python -m evals answers --compare-retry --limit 10 --delay 2 --update-readme
+python -m evals answers --rounds 1 --delay 30          # then --rounds 2 (another day if quota is short)
+python -m evals answers --compare-retry --update-readme # combine the two saved runs, no LLM calls
 docker compose up --build
 ```
 
