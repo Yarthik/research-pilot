@@ -1,0 +1,10 @@
+# Streamlit settings for the demo UI (read from the working directory by `streamlit run`).
+
+[client]
+# Hide the "Deploy" button and the developer menu.
+toolbarMode = "minimal"
+
+[server]
+# Matches the default MAX_UPLOAD_MB=20. The Docker image passes --server.maxUploadSize=$MAX_UPLOAD_MB,
+# so there the uploader's limit follows that setting.
+maxUploadSize = 20

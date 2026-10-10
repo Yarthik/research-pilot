@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import re
 
-_CURRENCY = re.compile(r"(?<!\\)\$(?=\d)")
+# "$" + an amount + a space, punctuation or the end: currency, not the start of $...$ maths ($10^4$, $2$).
+_CURRENCY = re.compile(r"(?<!\\)\$(?=\d[\d,.]*(?:[^\d,.$^_{}\\]|$))")
 _DISPLAY_MATH = re.compile(r"\\\[(.+?)\\\]", re.DOTALL)
 _INLINE_MATH = re.compile(r"\\\((.+?)\\\)", re.DOTALL)
 
@@ -14,8 +15,17 @@ def streamlit_markdown(text: str) -> str:
 
     Streamlit renders LaTeX only between $...$ and $$...$$, so models' \\( ... \\) and \\[ ... \\]
     delimiters are converted. It also treats any pair of dollar signs as maths, which would garble
-    amounts like "$36,500 ... $50", so a dollar sign followed by a digit is escaped first.
+    amounts like "$36,500 ... $50", so dollar amounts are escaped first.
     """
     text = _CURRENCY.sub(r"\\$", text or "")
     text = _DISPLAY_MATH.sub(lambda m: f"$${m.group(1).strip()}$$", text)
     return _INLINE_MATH.sub(lambda m: f"${m.group(1).strip()}$", text)
+
+
+def short_title(title: str, limit: int = 80) -> str:
+    """Shorten a title on a word boundary, with an ellipsis, instead of cutting a word in half."""
+    title = " ".join((title or "").split())
+    if len(title) <= limit:
+        return title
+    cut = title[: limit + 1].rsplit(" ", 1)[0] if " " in title[:limit] else title[:limit]
+    return cut.rstrip(" ,;:-–—") + "…"

@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
-from render import streamlit_markdown  # noqa: E402
+from render import short_title, streamlit_markdown  # noqa: E402
 
 
 def test_latex_delimiters_become_streamlit_math():
@@ -18,6 +18,19 @@ def test_multiline_display_math():
 def test_currency_is_escaped_so_it_is_not_read_as_maths():
     text = "Her salary is $36,500 and lunch costs $5."
     assert streamlit_markdown(text) == r"Her salary is \$36,500 and lunch costs \$5."
+
+
+def test_dollar_maths_starting_with_a_digit_is_not_mistaken_for_currency():
+    text = r"about $10^4$ times fewer, rank $2$, and $10{,}000\times$"
+    assert streamlit_markdown(text) == text
+
+
+def test_short_title_cuts_on_a_word_boundary():
+    title = "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models"
+    assert short_title(title, 60) == "Chain-of-Thought Prompting Elicits Reasoning in Large…"
+    assert short_title("Attention Is All You Need") == "Attention Is All You Need"
+    assert short_title("a" * 100, 10) == "a" * 10 + "…"  # no spaces: hard cut
+    assert short_title("") == "" and short_title(None) == ""
 
 
 def test_existing_dollar_maths_and_plain_text_are_untouched():

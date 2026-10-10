@@ -31,6 +31,7 @@ Rules:
 - If the sources do not contain the answer, say so plainly and set insufficient_information to true. Do not use outside knowledge, even if you know the answer.
 - If the sources answer only part of the question, answer that part and say what is missing.
 - Be concise and specific: include the numbers, names and definitions the sources give.
+- Write any mathematical notation in LaTeX between $...$ (inline) or $$...$$ (on its own line), for example $p(y_i \\mid x, y_{{1:i-1}})$.
 - List in cited_sources only the source numbers you actually used.
 
 Question: {question}

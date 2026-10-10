@@ -19,7 +19,7 @@ for path in (ROOT, ROOT / "app"):  # importable without `pip install -e .`
 
 import streamlit as st  # noqa: E402
 from backend import get_backend  # noqa: E402
-from render import streamlit_markdown  # noqa: E402
+from render import short_title, streamlit_markdown  # noqa: E402
 
 from researchpilot import __version__  # noqa: E402
 from researchpilot.cli import read_sources_file  # noqa: E402
@@ -81,7 +81,7 @@ def render_citations(citations: list[dict]) -> None:
     for c in citations:
         page = f", p. {c['page']}" if c.get("page") else ""
         icon = "🌐" if c.get("origin") == "web" else "📄"
-        with st.expander(f"[{c['n']}] {icon} {c['title'][:90]}{page}"):
+        with st.expander(f"[{c['n']}] {icon} {short_title(c['title'], 90)}{page}"):
             st.caption(c["source"])
             st.markdown(streamlit_markdown(c["text"]))
 
@@ -102,7 +102,7 @@ def render_result(result: dict, show_trace: bool) -> None:
 
 def show_report(status, report: dict) -> None:
     for item in report["ingested"]:
-        status.write(f"✅ {item['title'][:80]} ({item['chunks']} chunks)")
+        status.write(f"✅ {short_title(item['title'])} ({item['chunks']} chunks)")
     for item in report["failed"]:
         status.write(f"❌ {item['source']}: {item['error']}")
     status.update(label=f"Ingested {len(report['ingested'])}, failed {len(report['failed'])}", state="complete")
@@ -160,7 +160,7 @@ with st.sidebar:
     can_edit = bool(info.get("ingest_enabled"))
     for s in sources:
         left, right = st.columns([6, 1])
-        left.markdown(f"📄 **{s['title'][:60]}**  \n{s['chunks']} chunks")
+        left.markdown(f"📄 **{short_title(s['title'])}**  \n{s['chunks']} chunks")
         if can_edit and right.button("✕", key=f"del-{s['source']}", help=f"Remove {s['source']}"):
             backend().delete(s["source"])
             st.rerun()
@@ -205,11 +205,15 @@ question = st.chat_input("Ask a question about your documents", disabled=not sou
 if not sources:
     st.info("No documents yet. Add some from the sidebar to start.")
 elif not st.session_state.messages and not question:
-    st.markdown("**Try one of these:**")
-    cols = st.columns(2)
-    for i, example in enumerate(EXAMPLES):
-        if cols[i % 2].button(example, key=f"ex-{i}"):
-            question = example
+    examples = st.empty()  # cleared once a question is asked, so the buttons don't linger above the chat
+    with examples.container():
+        st.markdown("**Try one of these:**")
+        cols = st.columns(2)
+        for i, example in enumerate(EXAMPLES):
+            if cols[i % 2].button(example, key=f"ex-{i}"):
+                question = example
+    if question:
+        examples.empty()
 
 if question:
     st.session_state.messages.append({"role": "user", "content": question})
