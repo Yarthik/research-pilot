@@ -77,7 +77,7 @@ generate: sources=10, cited=[1, 2, 6, 7]
 streamlit run app/streamlit_app.py        # http://localhost:8501
 ```
 
-Chat with your documents, watch the agent's steps live, expand each citation to see the exact passage and page, switch retrieval modes, and upload PDFs or add URLs from the sidebar.
+Chat with your documents, watch the agent's steps live, expand each citation to see the exact passage and page, switch retrieval modes, and upload PDFs or add URLs from the sidebar. On a read-only public demo, `ALLOW_SESSION_UPLOADS=true` lets each visitor add up to two private files that only their own browser session can search ([details](docs/DEPLOY.md#private-uploads-allow_session_uploads)).
 
 ### API
 
@@ -189,6 +189,7 @@ Everything is set through environment variables or `.env` (see [.env.example](.e
 | `TAVILY_API_KEY` | unset | Enables web search when the planner decides documents won't cover a question |
 | `API_KEY`, `ALLOW_INGEST`, `MAX_UPLOAD_MB` | unset, `true`, `20` | API protection for public deployments |
 | `AUTO_INGEST_SAMPLES`, `DEMO_MAX_QUESTIONS` | unset, unset | Public demo: ingest the sample papers on first start; cap questions per UI session (unset = unlimited) |
+| `ALLOW_SESSION_UPLOADS` | `false` | UI with `ALLOW_INGEST=false`: each session may add 2 private, temporary files (5 MB, 50 pages each) |
 | `LANGSMITH_TRACING`, `LANGSMITH_API_KEY` | unset | Send LangGraph traces to LangSmith |
 
 Example models: OpenAI `gpt-4o-mini`, Anthropic `claude-haiku-4-5-20251001`, Ollama `llama3.1`. Model names change over time, so check your provider's list.
@@ -200,6 +201,7 @@ Example models: OpenAI `gpt-4o-mini`, Anthropic `claude-haiku-4-5-20251001`, Oll
 - **Choosing evidence across retry rounds.** The agent can find more chunks than fit in the answer prompt, and keeping the first N would silently discard everything a retry found. In `hybrid_rerank` the whole pool is re-scored against the original question by the cross-encoder. In the other modes, results are interleaved by rank across sub-queries and the slots are split between earlier rounds and the newest one, so neither a retry nor a sub-query is dropped wholesale. Both behaviours have regression tests.
 - **Bounded loop.** At most two retrieval rounds, and the grader is skipped on the last round, saving an LLM call when its verdict couldn't change anything.
 - **Sized for a small host.** Profiling a cold start on the real Streamlit server showed 3.2 GB of memory, over the ~2.7 GB free-hosting limit. The cause was ONNX Runtime: embedding in batches of 64 peaked near 2 GB and the allocator never gave it back. Batches of 8 produce bit-identical vectors, peak at about 0.5 GB, and cut the cold-start ingest from 145 s to 91 s; the whole app now peaks at about 0.7 GB (0.95 GB with the reranker switched on). A test pins the batch sizes.
+- **Private uploads without touching the shared index.** Each visitor's files get a small in-memory index of their own (vectors, plus BM25 over the shared papers and their files), searched alongside the shared ChromaDB collection with the same modes and RRF. An owner field with filtered search over one shared collection would have been the obvious alternative, but the shared index would no longer be read-only, approximate (HNSW) search over a graph full of other visitors' chunks could reorder shared results, and BM25 statistics computed over everyone's files would let one visitor's uploads shift another's scores. Here isolation depends on what a session's retriever can reach, not on remembering a filter; a session without uploads searches exactly as before (the retrieval eval is unchanged), and tests check in every mode that one session never retrieves another's chunks.
 - **Graceful degradation.** If a model fails structured output, each step has a fallback (raw question as the query, plain-text answer). Configuration problems such as a missing API key, and provider rate limits or quota, are the exception: retrying or guessing can't help, so they surface as a clear error instead of a degraded answer. The UI turns a rate limit into a friendly "try again later" message and the API returns a 429.
 - **Citations are checked, not trusted.** Citation numbers are parsed from the answer text (`[1]`, `[2][3]`, `[1, 4]`, `[2-4]`) and validated against the evidence list; invalid ones are reported in the trace and counted by the eval.
 - **Testable by design.** The LLM, embeddings, vector store and reranker are injectable, so the test suite runs the real agent graph, API and UI backends without API keys or model downloads.

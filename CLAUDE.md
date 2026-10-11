@@ -22,9 +22,15 @@ dark mode), a grouped sidebar (brand, Settings, demo limit, linked Documents, fo
 agent steps (on by default), and four example questions from the eval set (l1 shortened, m2, re3, u2), each
 checked live. Before the first question the chat input sits inline under the intro: a pinned input
 makes Streamlit scroll to the bottom on load, which hid the heading on phones. Step and footer wording
-lives in `app/render.py`.
+lives in `app/render.py`. Then (2026-10-11): landing heading "ResearchPilot" with a fixed subtitle in every
+mode; the chat placeholder names the sample papers' topics only when the read-only sample corpus is all
+there is. `ALLOW_SESSION_UPLOADS` (default false; UI only, needs `ALLOW_INGEST=false`) gives each browser
+session up to 2 private, temporary files (PDF/TXT/MD, 5 MB, 50 pages, 400k chars; no URLs), see "Private
+uploads" below. Also fixed a cold-start race: concurrent first page loads each built a ChromaDB client
+(`lru_cache` isn't thread-safe) and some visitors got "Could not reach the document index";
+`researchpilot/caching.build_once` now guards the retriever, the ONNX models and the session registry.
 
-**Tests:** 193 collected = 192 fast (`-m "not slow"`) + 1 slow; ruff clean. Update when it changes.
+**Tests:** 221 collected = 220 fast (`-m "not slow"`) + 1 slow; ruff clean. Update when it changes.
 
 **Hosting plan:** the main host is Streamlit Community Cloud (free, ~2.7 GB RAM): entry point
 `app/streamlit_app.py`, Python 3.12, settings as quoted top-level TOML secrets
@@ -64,7 +70,7 @@ so these parts have NOT yet run against the real libraries and need verifying fi
   the DEPLOY.md checklist hasn't been run on it yet). Hugging Face Docker Spaces now need a paid plan, so that path (Stage 6) is kept but is no longer the main one.
 
 Already verified: pure-Python logic (chunking, BM25, RRF, citations, evidence selection, agent
-nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 192 fast tests
+nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 220 fast tests
 (`pytest -m "not slow"`) and 1 slow test (`pytest -m slow`) pass, `ruff` is clean, and
 `requirements.txt` is pinned to the versions that ran. Verified against the real libraries in
 Stage 1: ChromaDB calls in `retrieval/vector_store.py`, FastEmbed embeddings and reranker (slow
@@ -142,6 +148,20 @@ by pointing the real Groq SDK at a local server that returns HTTP 429. Not verif
 Community Cloud host itself (its SQLite version, CPU count, folder permissions); `docs/DEPLOY.md` has
 the troubleshooting for each. Optional follow-up for a faster cold start: ship the sample corpus's
 chunks and vectors as a snapshot instead of downloading and embedding five PDFs on every wake-up.
+
+Private uploads (`researchpilot/retrieval/session.py`): each session's files live in their own in-memory
+index (chunks, normalised vectors, BM25 over shared chunks + own); `SessionRetriever` subclasses
+`HybridRetriever` and only overrides `vector_search` (shared top-k merged with own top-k by cosine) and
+`bm25`, so modes and RRF are unchanged. A session without uploads gets the shared retriever object itself.
+The shared ChromaDB collection is never written. Chosen over an owner field + filtered search because that
+would write to the shared index, could reorder shared HNSW results, and would let other sessions' files
+shift BM25 IDF. The agent gets the session via `ask_stream(..., owner=...)` -> state `owner` -> retrieve
+node. Limits: 2 files, 5 MB, 50 pages, 400k chars per file, 10 sessions at once, 1 h idle (lazy clean-up on
+any page load plus a daemon thread every 5 min); embedding is serialised by a lock. Verified: retrieval
+eval and all 232 exact rankings unchanged (u4, an unanswerable question, varies run to run in vector modes
+even on the old code: HNSW on an off-topic query); two concurrent sessions each adding a 5 MB PDF and asking
+peaked at 457 MB; live, session A answered from its private PDF while session B, at the same time, could
+not see it. arXiv is unreachable from Claude's sandbox, so test PDFs there are generated locally.
 
 ## Commands
 

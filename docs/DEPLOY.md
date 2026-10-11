@@ -37,6 +37,7 @@ Community Cloud runs `app/streamlit_app.py` straight from the GitHub repository,
    AUTO_INGEST_SAMPLES = "true"
    ALLOW_INGEST = "false"
    DEMO_MAX_QUESTIONS = "5"
+   ALLOW_SESSION_UPLOADS = "false"
    ```
 
    | Secret | Why |
@@ -46,6 +47,7 @@ Community Cloud runs `app/streamlit_app.py` straight from the GitHub repository,
    | `AUTO_INGEST_SAMPLES` | The first page load downloads and ingests the five sample papers. |
    | `ALLOW_INGEST` | `false` hides upload, URL ingest and delete, so visitors can ask but not change the documents. |
    | `DEMO_MAX_QUESTIONS` | Questions per visitor session, to protect the free Groq quota (see [below](#protecting-the-groq-quota)). |
+   | `ALLOW_SESSION_UPLOADS` | `"true"` lets each visitor add up to 2 private files (PDF, TXT or MD; 5 MB and 50 pages each) next to the shared papers, while `ALLOW_INGEST = "false"` keeps the shared papers read-only. See [Private uploads](#private-uploads-allow_session_uploads). |
 
    Put every secret at the top level of the file (not under a `[section]`) and quote the values, including `"true"`, `"false"` and numbers. Top-level secrets become environment variables, which is how the app reads its settings. Streamlit itself skips unquoted TOML booleans such as `ALLOW_INGEST = false`; the app has a fallback for that, but quoting is the safer habit.
 5. **Deploy.** Installing the requirements takes about 5-10 minutes; watch *Manage app* for the log. The first visitor then triggers the model download (about 70 MB) and the ingest of the five papers, which took about 90 seconds on a 4-core machine and may take 2-4 minutes on the free tier's shared CPU. After that the app answers immediately.
@@ -70,8 +72,21 @@ Measured on the real `streamlit run` server, starting from an empty index and mo
 | Cold start (download models, ingest 5 papers) and one question | 680 MB |
 | The same, with a visitor switching on the cross-encoder reranker | 950 MB |
 | *Before the fix: embedding in batches of 64* | *3,250 MB* |
+| Two visitors at once, each adding a 5 MB PDF (45 and 30 dense pages) and asking a question; index already built, models loaded during the run | 457 MB |
 
 The cause of the 3.2 GB was ONNX Runtime: embedding in batches of 64 peaked near 2 GB and the allocator never returned it. Batches of 8 give bit-identical vectors, use a quarter of the memory and ingest faster. `tests/test_runtime_env.py` pins the batch sizes.
+
+### Private uploads (`ALLOW_SESSION_UPLOADS`)
+
+With `ALLOW_SESSION_UPLOADS = "true"` (and `ALLOW_INGEST = "false"`), the sidebar gets a *Your documents* section where each visitor can add up to 2 files: PDF, TXT or MD, at most 5 MB and 50 pages each (and 400,000 characters of text). No URL ingestion in this mode. The files are searched together with the shared papers, in every retrieval mode, but only in that browser session:
+
+- Each session's files live in a small in-memory index of their own (chunks, vectors and a BM25 index over the shared papers plus that session's files). The shared ChromaDB index is never written, so it stays read-only and nothing is left on disk.
+- A session can only reach the shared index and its own, so one visitor can never retrieve another's files, and one visitor's files don't change another's keyword scores. A session without uploads searches exactly as before.
+- Files are removed when the visitor clicks *Remove*, reloads the page (a new session), or after an hour without activity (a background clean-up runs every 5 minutes). At most 10 sessions can hold files at once; beyond that, visitors see a friendly "at capacity" message and can still ask about the shared papers.
+- Uploads are embedded one at a time, so concurrent uploads don't stack up memory. Adding a dense 30-45-page PDF took 30-50 seconds on a 4-core machine, including loading the embedding model the first time; expect longer on the free tier.
+- The question limit still applies. The API is unaffected: it keeps its single shared corpus and `ALLOW_INGEST`.
+
+The limits are constants at the top of `researchpilot/retrieval/session.py`.
 
 ### Protecting the Groq quota
 
@@ -85,6 +100,7 @@ When the quota (or a per-minute limit) is used up, visitors see a friendly "the 
 | --- | --- |
 | The page says *This host's SQLite is ... but ChromaDB needs 3.35 or newer* | The host's system SQLite is old. Add the line `pysqlite3-binary` to `requirements.txt` (Linux wheels exist for Python 3.12 and 3.13), push, and the app switches to it automatically. |
 | Upload, URL and delete controls are visible | `ALLOW_INGEST` is missing, misspelled, or sits under a `[section]` in the secrets. |
+| No *Your documents* section | `ALLOW_SESSION_UPLOADS` isn't `"true"`, or `ALLOW_INGEST` isn't `"false"` (with shared uploads on, the private ones are hidden). |
 | "No documents yet" after a restart | `AUTO_INGEST_SAMPLES` is missing or not `"true"`. A failed paper download is retried on the next page load. |
 | The install fails on a dependency | Check that the Python version in *Advanced settings* is 3.12. |
 | "Free-tier limit" message right after deploying | The Groq key is rate-limited or exhausted; check the app log for the provider's message. |
@@ -148,6 +164,7 @@ Mount a volume at `/app/storage` to keep the index across restarts.
 
 - [ ] The sidebar lists the five papers with clean titles (or `/health` on the API shows a non-zero chunk count), and the heading reads "Ask questions about five landmark AI papers"
 - [ ] One example question returns an answer with citations
-- [ ] `ALLOW_INGEST=false` on public deployments: the sidebar says "This demo uses a fixed set of documents" and has no upload or ✕ buttons
+- [ ] `ALLOW_INGEST=false` on public deployments: the sidebar says "This demo uses a fixed set of documents" (or, with private uploads on, "Shared with every visitor and read-only"), and the shared papers have no ✕ buttons or URL box
 - [ ] The sidebar shows "Demo limit: N of N left in this session" if `DEMO_MAX_QUESTIONS` is set
+- [ ] With `ALLOW_SESSION_UPLOADS = "true"`: a small PDF added under *Your documents* can be asked about, a second browser (or a private window) doesn't see it, and *Remove* deletes it
 - [ ] The API key is set as a *secret* (Community Cloud's Secrets box or a Hugging Face *Secret*), never in a file, and `.env` is not committed
