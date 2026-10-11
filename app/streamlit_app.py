@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import sys
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +39,7 @@ from researchpilot.cli import read_sources_file  # noqa: E402
 from researchpilot.config import get_settings  # noqa: E402
 from researchpilot.ingestion.loaders import title_case_if_all_caps  # noqa: E402
 from researchpilot.llm import LLMConfigError, LLMRateLimitError  # noqa: E402
+from researchpilot.retrieval.session import MAX_FILE_MB, MAX_FILES, MAX_PDF_PAGES, SessionUploadError  # noqa: E402
 
 SAMPLE_FILE = ROOT / "data" / "sample_sources.txt"
 ICON = ":material/travel_explore:"
@@ -71,7 +73,15 @@ STEP_ICONS = {
     "grade": ":material/fact_check:",
     "generate": ":material/edit_note:",
 }
-NUMBER_WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
+SUBTITLE = (
+    "Ask a question. The agent searches, checks its evidence, searches again if needed, and answers with citations."
+)
+DEMO_PLACEHOLDER = "Ask about Transformers, RAG, LoRA, ReAct or chain-of-thought…"
+GENERIC_PLACEHOLDER = "Ask a question about your documents…"
+PRIVATE_NOTE = (
+    "Private to this browser tab and temporary: removed when you click Remove, reload the page, "
+    "or after an hour without activity."
+)
 
 st.set_page_config(page_title="ResearchPilot", page_icon=ICON, layout="wide")
 
@@ -148,15 +158,57 @@ def auto_ingest_samples() -> bool:
     return not missing or not backend().ingest_urls(missing)["failed"]
 
 
-def page_heading(sources: list[dict], can_edit: bool) -> str:
-    if can_edit:
-        return "Ask questions about your documents"
+def only_sample_papers(sources: list[dict]) -> bool:
     samples = set(read_sources_file(str(SAMPLE_FILE))) if SAMPLE_FILE.exists() else set()
-    if sources and all(s["source"] in samples for s in sources):
-        count = len(sources)
-        number = NUMBER_WORDS[count] if count < len(NUMBER_WORDS) else str(count)
-        return f"Ask questions about {number} landmark AI {'paper' if count == 1 else 'papers'}"
-    return "Ask questions about these documents"
+    return bool(sources) and all(s["source"] in samples for s in sources)
+
+
+def session_uploads_panel(owner: str, my_docs: list[dict]) -> None:
+    """The visitor's private files: list with Remove buttons, and an uploader while there is room."""
+    st.markdown("**Your documents**")
+    st.caption(f":material/lock: {PRIVATE_NOTE}")
+    for doc in my_docs:
+        left, right = st.columns([3, 2], vertical_alignment="center")
+        left.markdown(f":material/draft: {display_title(doc['title'], 60)}")
+        if right.button("Remove", key=f"rm-{doc['source']}", help=f"Remove {doc['source']}"):
+            backend().remove_session_file(owner, doc["source"])
+            st.rerun()
+    for kind, text in st.session_state.pop("upload_notes", []):
+        if kind == "ok":
+            st.success(text, icon=":material/check:")
+        else:
+            st.error(text, icon=":material/error:")
+
+    room = MAX_FILES - len(my_docs)
+    if room <= 0:
+        st.caption(f"You've added {MAX_FILES} files, the most for this demo. Remove one to add another.")
+        return
+    uploads = st.file_uploader(
+        f"Add your own file: PDF, TXT or MD, up to {MAX_FILE_MB} MB and {MAX_PDF_PAGES} pages "
+        f"({plural(room, 'more file')} allowed)",
+        type=["pdf", "txt", "md"],
+        accept_multiple_files=True,
+        max_upload_size=MAX_FILE_MB,
+        key=f"session-upload-{st.session_state.upload_round}",
+    )
+    if not uploads:
+        return
+    notes = []
+    with st.spinner("Reading and indexing your file..."):
+        for upload in uploads[:room]:
+            try:
+                added = backend().add_session_file(owner, upload.name, upload.getvalue())
+                notes.append(("ok", f"Added {display_title(added['title'], 60)} ({plural(added['pages'], 'page')})."))
+            except SessionUploadError as exc:
+                notes.append(("error", str(exc)))
+            except Exception as exc:  # unexpected: keep the page working
+                notes.append(("error", f"{upload.name} couldn't be added: {exc}"))
+    if len(uploads) > room:
+        skipped = ", ".join(u.name for u in uploads[room:])
+        notes.append(("error", f"Only {plural(room, 'more file')} can be added, so {skipped} was skipped."))
+    st.session_state.upload_notes = notes
+    st.session_state.upload_round += 1  # a fresh uploader: clears the widget and frees the uploaded bytes
+    st.rerun()
 
 
 def how_it_works(mode: str, max_rounds: int) -> str:
@@ -197,6 +249,9 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "questions_asked" not in st.session_state:
     st.session_state.questions_asked = 0  # not reset by "Clear chat", so the demo limit holds
+if "owner" not in st.session_state:
+    st.session_state.owner = uuid.uuid4().hex  # this browser session's id for its private uploads
+    st.session_state.upload_round = 0
 
 # Optional per-session cap for a public demo (DEMO_MAX_QUESTIONS); None means unlimited.
 settings = get_settings()
@@ -204,10 +259,19 @@ question_limit = settings.demo_max_questions
 questions_left = None if question_limit is None else max(question_limit - st.session_state.questions_asked, 0)
 limit_reached = questions_left == 0
 can_edit = bool(info.get("ingest_enabled"))
+# Private per-visitor uploads: only when the shared corpus is read-only, and only in-process (not via the API).
+owner = st.session_state.owner
+session_uploads = (
+    settings.allow_session_uploads and not can_edit and getattr(backend(), "supports_session_uploads", False)
+)
+my_docs: list[dict] = []
+if session_uploads:
+    backend().touch_session(owner)  # keeps this visitor's uploads alive; removes other idle sessions' uploads
+    my_docs = backend().session_documents(owner)
 
 # --------------------------------------------------------------------------- sidebar
 with st.sidebar:
-    st.subheader("ResearchPilot", anchor=False, icon=ICON)
+    st.markdown(f"{ICON} **ResearchPilot**")  # small: the page heading carries the name
     st.caption("Agentic RAG with verifiable citations")
 
     st.markdown("**Settings**")
@@ -230,6 +294,8 @@ with st.sidebar:
 
     st.divider()
     st.markdown(f"**Documents ({len(sources)})**")
+    if session_uploads:
+        st.caption("Shared with every visitor and read-only.")
     for s in sources:
         title = display_title(s["title"])
         link = f"[{title}]({s['source']})" if s["source"].startswith(("http://", "https://")) else title
@@ -260,6 +326,8 @@ with st.sidebar:
         if not sources and SAMPLE_FILE.exists() and st.button("Load 5 sample AI papers", type="primary"):
             ingest_urls(read_sources_file(str(SAMPLE_FILE)))
             st.rerun()
+    elif session_uploads:
+        session_uploads_panel(owner, my_docs)
     else:
         st.info("This demo uses a fixed set of documents.", icon=":material/lock:")
 
@@ -268,11 +336,8 @@ with st.sidebar:
     st.caption(f"{model_label(info['llm_provider'], info['llm_model'])} · v{__version__}")
 
 # --------------------------------------------------------------------------- chat
-st.header(page_heading(sources, can_edit), anchor=False)
-st.markdown(
-    "An AI research agent that plans its searches, checks whether it found enough, searches again "
-    "if needed, and answers with citations you can open."
-)
+st.title("ResearchPilot", anchor=False)
+st.markdown(SUBTITLE)
 with st.expander("How it works", icon=":material/help_outline:"):
     st.markdown(how_it_works(mode, settings.max_retrieval_rounds))
 
@@ -290,8 +355,13 @@ for message in st.session_state.messages:
 # started, the input is pinned to the bottom as usual.
 landing = not st.session_state.messages
 input_area = st.container() if landing else st
-question = input_area.chat_input("Ask a question about the documents", disabled=not sources or limit_reached)
-if not sources:
+# The sample papers' topics in the read-only demo; a generic prompt once the visitor's own files are in play.
+demo_corpus = not can_edit and not my_docs and only_sample_papers(sources)
+has_documents = bool(sources or my_docs)
+question = input_area.chat_input(
+    DEMO_PLACEHOLDER if demo_corpus else GENERIC_PLACEHOLDER, disabled=not has_documents or limit_reached
+)
+if not has_documents:
     st.info("No documents yet. Add some from the sidebar to start.")
 elif limit_reached:
     st.info(
@@ -323,7 +393,7 @@ if question and not limit_reached:
         try:
             with progress.container(), st.status("Researching...", expanded=True) as status:
                 try:
-                    for event in backend().ask_stream(question, mode=mode):
+                    for event in backend().ask_stream(question, mode=mode, owner=owner if session_uploads else None):
                         if event["type"] == "step":
                             status.write(f"{STEP_ICONS.get(event['step'], '•')} {describe_step(event)}")
                         elif event["type"] == "result":

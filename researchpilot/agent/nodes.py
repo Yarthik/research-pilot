@@ -89,6 +89,10 @@ def retrieve(state: ResearchState) -> dict:
     start = time.perf_counter()
     settings = get_settings()
     retriever = hybrid.get_retriever()
+    if state.get("owner"):  # a UI session: its private uploads too, never another session's
+        from ..retrieval.session import get_registry
+
+        retriever = get_registry().retriever(state["owner"], retriever)
     mode = state.get("mode") or settings.retrieval_mode
     existing = list(state.get("evidence") or [])
     seen = {item["id"] for item in existing}

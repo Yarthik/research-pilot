@@ -114,6 +114,24 @@ def test_rate_limit_shows_a_friendly_message_not_the_raw_error(
     assert not at.chat_input[0].disabled
 
 
+HEADING = "ResearchPilot"
+SUBTITLE = (
+    "Ask a question. The agent searches, checks its evidence, searches again if needed, and answers with citations."
+)
+DEMO_PLACEHOLDER = "Ask about Transformers, RAG, LoRA, ReAct or chain-of-thought…"
+GENERIC_PLACEHOLDER = "Ask a question about your documents…"
+
+
+def _placeholder(at: AppTest) -> str:
+    return at.chat_input[0].proto.placeholder
+
+
+def _assert_landing_copy(at: AppTest) -> None:
+    """The same heading and subtitle in every mode."""
+    assert [t.value for t in at.title] == [HEADING]
+    assert any(m.value == SUBTITLE for m in at.markdown)
+
+
 def _page_text(at: AppTest) -> str:
     groups = (at.header, at.markdown, at.caption, at.info, at.warning, at.expander, at.button, at.toggle)
     return " ".join(str(getattr(el, "value", None) or getattr(el, "label", "")) for g in groups for el in g)
@@ -124,7 +142,8 @@ def test_own_documents_mode_copy_settings_and_footer(loaded_retriever, monkeypat
 
     at = _app(monkeypatch).run()
     assert not at.exception
-    assert at.header[0].value == "Ask questions about your documents"
+    _assert_landing_copy(at)
+    assert _placeholder(at) == GENERIC_PLACEHOLDER  # ALLOW_INGEST=true: the visitor's own documents
     assert at.selectbox[0].label == "Search method"
     labels = ["Hybrid (recommended)", "Hybrid + reranker", "Keyword (BM25)", "Semantic (vector)"]
     assert at.selectbox[0].options == labels
@@ -146,7 +165,7 @@ def test_own_documents_mode_copy_settings_and_footer(loaded_retriever, monkeypat
     assert len(_example_buttons(at)) == 4
 
 
-def test_demo_mode_names_the_sample_papers_with_clean_linked_titles(retriever, monkeypatch):
+def test_demo_mode_suggests_the_papers_topics_and_shows_clean_linked_titles(retriever, monkeypatch):
     from researchpilot.cli import read_sources_file
 
     samples = read_sources_file(str(APP.parents[1] / "data" / "sample_sources.txt"))
@@ -158,16 +177,18 @@ def test_demo_mode_names_the_sample_papers_with_clean_linked_titles(retriever, m
     )
     at = _app(monkeypatch, ALLOW_INGEST="false").run()
     assert not at.exception
-    assert at.header[0].value == "Ask questions about five landmark AI papers"
+    _assert_landing_copy(at)
+    assert _placeholder(at) == DEMO_PLACEHOLDER
     links = " ".join(m.value for m in at.sidebar.markdown)
     assert f"[LoRA: Low-Rank Adaptation of Large Language Models]({lora})" in links
     assert "LORA: LOW-RANK" not in links
     assert any("fixed set of documents" in i.value for i in at.sidebar.info)
 
 
-def test_read_only_mode_with_other_documents_has_a_neutral_heading(loaded_retriever, monkeypatch):
+def test_read_only_mode_with_other_documents_has_a_generic_placeholder(loaded_retriever, monkeypatch):
     at = _app(monkeypatch, ALLOW_INGEST="false").run()
-    assert at.header[0].value == "Ask questions about these documents"
+    _assert_landing_copy(at)
+    assert _placeholder(at) == GENERIC_PLACEHOLDER
 
 
 def test_answer_shows_agent_steps_and_a_natural_footer(loaded_retriever, fake_llm, monkeypatch):
@@ -183,6 +204,67 @@ def test_answer_shows_agent_steps_and_a_natural_footer(loaded_retriever, fake_ll
     at.toggle[0].set_value(False).run()  # steps hidden, the answer stays
     assert not any(e.label.startswith("Agent steps") for e in at.expander)
     assert any("rank decomposition" in m.value for m in at.markdown)
+
+
+ZEBRAS = b"Zebras migrate across the Serengeti every year, following the rains."
+
+
+def _session_app(monkeypatch, owner: str, **env) -> AppTest:
+    at = _app(monkeypatch, ALLOW_INGEST="false", ALLOW_SESSION_UPLOADS="true", **env)
+    at.session_state["owner"] = owner  # what the page would generate for a new browser session
+    at.session_state["upload_round"] = 0
+    return at
+
+
+def _sidebar_text(at: AppTest) -> str:
+    return " ".join(m.value for m in at.sidebar.markdown) + " ".join(c.value for c in at.sidebar.caption)
+
+
+def test_private_uploads_are_listed_only_in_their_session_and_can_be_removed(loaded_retriever, monkeypatch):
+    from researchpilot.retrieval.session import get_registry
+
+    get_registry().add_file("alice", "zebras.txt", ZEBRAS)
+    alice = _session_app(monkeypatch, "alice").run()
+    assert not alice.exception
+    text = _sidebar_text(alice)
+    assert "Your documents" in text and ":material/draft: zebras" in text and "Private to this browser tab" in text
+    assert "Shared with every visitor and read-only" in text
+    assert alice.get("file_uploader")  # one more file allowed
+    assert _placeholder(alice) == GENERIC_PLACEHOLDER
+
+    bob = _session_app(monkeypatch, "bob").run()
+    assert "Your documents" in _sidebar_text(bob) and "zebras" not in _sidebar_text(bob)
+
+    next(b for b in alice.sidebar.button if b.key == "rm-zebras.txt").click().run()
+    assert get_registry().documents("alice") == []
+    assert "zebras" not in _sidebar_text(alice)
+
+
+def test_questions_search_the_askers_uploads_and_still_count_towards_the_limit(loaded_retriever, fake_llm, monkeypatch):
+    from researchpilot.retrieval.session import get_registry
+
+    get_registry().add_file("alice", "zebras.txt", ZEBRAS)
+    fake_llm.responses = {
+        "ResearchPlan": [{"sub_queries": ["zebras migrate Serengeti"], "needs_web": False}],
+        "ContextGrade": [{"sufficient": True}],
+        "Answer": [{"answer": "They follow the rains [1].", "cited_sources": [1]}],
+    }
+    alice = _session_app(monkeypatch, "alice", DEMO_MAX_QUESTIONS="1").run()
+    alice.chat_input[0].set_value("Why do zebras migrate?").run()
+    assert not alice.exception
+    assert any(e.label.startswith("[1] zebras") for e in alice.expander)  # cited from her private file
+    assert alice.chat_input[0].disabled and alice.session_state["questions_asked"] == 1
+
+    bob = _session_app(monkeypatch, "bob").run()
+    bob.chat_input[0].set_value("Why do zebras migrate?").run()
+    assert not any("zebras" in e.label for e in bob.expander)
+
+
+@pytest.mark.parametrize("env", [{"ALLOW_INGEST": "false"}, {"ALLOW_INGEST": "true", "ALLOW_SESSION_UPLOADS": "true"}])
+def test_private_uploads_only_appear_when_enabled_on_a_read_only_demo(loaded_retriever, monkeypatch, env):
+    at = _app(monkeypatch, **env).run()
+    assert not at.exception
+    assert "Your documents" not in _sidebar_text(at)
 
 
 def test_a_boolean_secret_makes_the_page_read_only(loaded_retriever, monkeypatch):

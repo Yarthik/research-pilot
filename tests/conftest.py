@@ -15,7 +15,7 @@ import pytest
 
 from researchpilot import config, llm
 from researchpilot.ingestion.chunking import Chunk
-from researchpilot.retrieval import embeddings, hybrid
+from researchpilot.retrieval import embeddings, hybrid, session
 from researchpilot.retrieval.bm25 import tokenize
 from researchpilot.retrieval.vector_store import summarize_sources
 
@@ -145,7 +145,7 @@ CORPUS = [
 
 # --------------------------------------------------------------------------- fixtures
 def _clear_caches() -> None:
-    funcs = [config.get_settings, hybrid.get_retriever, llm.get_llm]
+    funcs = [config.get_settings, hybrid.get_retriever, llm.get_llm, session.get_registry]
     try:
         from researchpilot.agent import graph
 

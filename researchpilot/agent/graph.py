@@ -34,7 +34,7 @@ def get_graph():
     return build_graph()
 
 
-def _initial_state(question: str, mode: str | None, max_rounds: int | None) -> dict:
+def _initial_state(question: str, mode: str | None, max_rounds: int | None, owner: str | None = None) -> dict:
     question = (question or "").strip()
     if not question:
         raise ValueError("question must not be empty")
@@ -43,6 +43,8 @@ def _initial_state(question: str, mode: str | None, max_rounds: int | None) -> d
         state["mode"] = mode
     if max_rounds:
         state["max_rounds"] = max_rounds
+    if owner:
+        state["owner"] = owner
     return state
 
 
@@ -57,19 +59,24 @@ def _result(state: dict, seconds: float) -> dict:
     return result
 
 
-def ask(question: str, mode: str | None = None, max_rounds: int | None = None) -> dict:
-    """Run the agent on one question and return the answer, citations and step trace."""
+def ask(question: str, mode: str | None = None, max_rounds: int | None = None, owner: str | None = None) -> dict:
+    """Run the agent on one question and return the answer, citations and step trace.
+
+    `owner` is a UI session id: that session's private uploads are searched along with the shared corpus.
+    """
     start = time.perf_counter()
-    state = get_graph().invoke(_initial_state(question, mode, max_rounds))
+    state = get_graph().invoke(_initial_state(question, mode, max_rounds, owner))
     return _result(dict(state), round(time.perf_counter() - start, 2))
 
 
-def ask_stream(question: str, mode: str | None = None, max_rounds: int | None = None) -> Iterator[dict]:
+def ask_stream(
+    question: str, mode: str | None = None, max_rounds: int | None = None, owner: str | None = None
+) -> Iterator[dict]:
     """Yield {"type": "step", ...} events as each node finishes, then {"type": "result", ...}."""
     start = time.perf_counter()
     final: dict = {}
     for stream_mode, chunk in get_graph().stream(
-        _initial_state(question, mode, max_rounds), stream_mode=["updates", "values"]
+        _initial_state(question, mode, max_rounds, owner), stream_mode=["updates", "values"]
     ):
         if stream_mode == "values":
             final = dict(chunk)

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
-from functools import lru_cache
 
+from ..caching import build_once
 from ..config import RETRIEVAL_MODES, get_settings
 from ..ingestion.chunking import Chunk
 from .bm25 import BM25Index
@@ -74,6 +74,10 @@ class HybridRetriever:
             self._bm25 = None
 
     # retrieval ----------------------------------------------------------------
+    def vector_search(self, query: str, k: int) -> list[tuple[Chunk, float]]:
+        """Top-k chunks by cosine similarity (overridden for a session's private documents)."""
+        return self.store.search(self.embed_query(query), k)
+
     def rerank(self, query: str, chunks: list[Chunk], top_k: int) -> list[tuple[Chunk, float]]:
         if not chunks:
             return []
@@ -91,12 +95,12 @@ class HybridRetriever:
             return []
 
         if mode == "vector":
-            return self.store.search(self.embed_query(query), final_k)
+            return self.vector_search(query, final_k)
         if mode == "bm25":
             return self.bm25.search(query, final_k)
 
         candidate_k = max(s.candidate_k, final_k)
-        vector_hits = [c for c, _ in self.store.search(self.embed_query(query), candidate_k)]
+        vector_hits = [c for c, _ in self.vector_search(query, candidate_k)]
         keyword_hits = [c for c, _ in self.bm25.search(query, candidate_k)]
         fused = reciprocal_rank_fusion([vector_hits, keyword_hits])
         if mode == "hybrid":
@@ -104,6 +108,6 @@ class HybridRetriever:
         return self.rerank(query, [c for c, _ in fused[:candidate_k]], final_k)
 
 
-@lru_cache
+@build_once
 def get_retriever() -> HybridRetriever:
     return HybridRetriever()

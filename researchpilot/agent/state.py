@@ -20,6 +20,7 @@ class ResearchState(TypedDict, total=False):
     question: str
     mode: str | None  # retrieval mode override
     max_rounds: int | None  # override for max_retrieval_rounds (used by the eval ablation)
+    owner: str | None  # UI session whose private uploads are searched too (retrieval/session.py)
     # planning / retrieval loop
     sub_queries: list[str]
     new_queries: list[str]

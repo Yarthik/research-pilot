@@ -52,6 +52,9 @@ class Settings(BaseModel):
     max_upload_mb: int = Field(20, ge=1)
     cors_origins: str = "*"  # comma-separated list for the API
     demo_max_questions: int | None = Field(None, ge=1)  # UI questions per browser session; unset = unlimited
+    # UI only: with ALLOW_INGEST=false, let each browser session add a few private, temporary files
+    # (limits in retrieval/session.py). The shared corpus stays read-only and the API is unaffected.
+    allow_session_uploads: bool = False
 
     @field_validator("retrieval_mode")
     @classmethod

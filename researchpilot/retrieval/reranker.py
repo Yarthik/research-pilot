@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
-
+from ..caching import build_once
 from ..config import get_settings
 
 BATCH_SIZE = 8  # fastembed defaults to 64, which needs far more memory for 512-token passage pairs
 
 
-@lru_cache
+@build_once
 def _model(name: str):
     from fastembed.rerank.cross_encoder import TextCrossEncoder
 

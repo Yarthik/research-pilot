@@ -68,10 +68,30 @@ class LocalBackend:
 
         return delete_source(source)
 
-    def ask_stream(self, question: str, mode: str | None = None) -> Iterator[dict]:
+    def ask_stream(self, question: str, mode: str | None = None, owner: str | None = None) -> Iterator[dict]:
         from researchpilot.agent.graph import ask_stream
 
-        yield from ask_stream(question, mode=mode)
+        yield from ask_stream(question, mode=mode, owner=owner)
+
+    # Private, temporary uploads for one browser session (ALLOW_SESSION_UPLOADS; see retrieval/session.py).
+    supports_session_uploads = True
+
+    def _sessions(self):
+        from researchpilot.retrieval.session import get_registry
+
+        return get_registry()
+
+    def touch_session(self, owner: str) -> None:
+        self._sessions().touch(owner)
+
+    def session_documents(self, owner: str) -> list[dict]:
+        return self._sessions().documents(owner)
+
+    def add_session_file(self, owner: str, name: str, data: bytes) -> dict:
+        return self._sessions().add_file(owner, name, data)
+
+    def remove_session_file(self, owner: str, source: str) -> bool:
+        return self._sessions().remove(owner, source)
 
 
 class ApiBackend:
@@ -122,7 +142,9 @@ class ApiBackend:
     def delete(self, source: str) -> int:
         return self._check(self.client.delete("/sources", params={"source": source})).json()["deleted_chunks"]
 
-    def ask_stream(self, question: str, mode: str | None = None) -> Iterator[dict]:
+    supports_session_uploads = False  # the API keeps one shared corpus (ALLOW_INGEST)
+
+    def ask_stream(self, question: str, mode: str | None = None, owner: str | None = None) -> Iterator[dict]:
         body = {"question": question, "mode": mode}
         with self.client.stream("POST", "/ask/stream", json=body) as response:
             if response.status_code >= 400:

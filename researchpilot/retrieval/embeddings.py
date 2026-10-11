@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
-
+from ..caching import build_once
 from ..config import get_settings
 
 # Memory, not speed, is the limit on small hosts: ONNX Runtime's memory grows with batch size (64 chunks
@@ -11,7 +10,7 @@ from ..config import get_settings
 BATCH_SIZE = 8
 
 
-@lru_cache
+@build_once
 def _model(name: str):
     from fastembed import TextEmbedding
 
