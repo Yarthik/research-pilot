@@ -218,7 +218,7 @@ researchpilot/
 ├── tools/web_search.py    optional Tavily search
 ├── api/                   FastAPI app and request/response schemas
 └── cli.py                 command-line interface
-app/, .streamlit/          Streamlit UI, local/HTTP backends and UI config (Community Cloud reads both)
+app/, .streamlit/          Streamlit UI (styles in app/styles.css), local/HTTP backends and UI config
 evals/                     dataset, metrics, LLM judge, runner, README table updater
 tests/                     unit + integration tests with fakes (no keys, no downloads)
 docs/, deploy/, scripts/   deployment guide, optional Hugging Face Space config, helper scripts

@@ -60,6 +60,7 @@ Community Cloud runs `app/streamlit_app.py` straight from the GitHub repository,
 - **Sleeping.** Free apps go to sleep after about 12 hours without visitors and wake when someone clicks *Yes, get this app back up*. Waking restarts the app, so the first load ingests the papers again (2-4 minutes). Open the link yourself a few minutes before showing it to someone.
 - **Storage is temporary.** The index is written to `storage/` in the app folder, or to the system temp folder if the app folder is read-only; the FastEmbed model cache is in the temp folder. Both disappear on a restart and are rebuilt by `AUTO_INGEST_SAMPLES`.
 - **Configuration files** are read from the repository: `requirements.txt` (pinned to the versions that were tested) and `.streamlit/config.toml` (minimal toolbar, 20 MB upload limit). With `ALLOW_INGEST=false` the upload box is hidden anyway.
+- **Streamlit's own chrome.** `app/styles.css` hides everything inside the app that can go without breaking it (the decoration bar, main menu, running indicator and deploy button; the toolbar itself stays because it holds the button that opens the sidebar on a phone), and `.streamlit/config.toml` sets the minimal toolbar. What Community Cloud draws around the app is outside the app's page, so CSS can't reach it: the hosting badge and the creator's avatar in the bottom-right corner, and the *Manage app* button, which only the owner sees. Sharing the link with `?embed=true` drops Community Cloud's surroundings (untested here).
 - **Local runs** can use the same secrets: copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` (git-ignored) and run `streamlit run app/streamlit_app.py`.
 
 ### Memory
@@ -165,6 +166,6 @@ Mount a volume at `/app/storage` to keep the index across restarts.
 - [ ] The sidebar lists the five papers with clean titles (or `/health` on the API shows a non-zero chunk count), and the heading reads "Ask questions about five landmark AI papers"
 - [ ] One example question returns an answer with citations
 - [ ] `ALLOW_INGEST=false` on public deployments: the sidebar says "This demo uses a fixed set of documents" (or, with private uploads on, "Shared with every visitor and read-only"), and the shared papers have no ✕ buttons or URL box
-- [ ] The sidebar shows "Demo limit: N of N left in this session" if `DEMO_MAX_QUESTIONS` is set
+- [ ] The sidebar shows "N of N questions left" with a thin bar if `DEMO_MAX_QUESTIONS` is set
 - [ ] With `ALLOW_SESSION_UPLOADS = "true"`: a small PDF added under *Your documents* can be asked about, a second browser (or a private window) doesn't see it, and *Remove* deletes it
 - [ ] The API key is set as a *secret* (Community Cloud's Secrets box or a Hugging Face *Secret*), never in a file, and `.env` is not committed

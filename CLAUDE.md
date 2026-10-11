@@ -29,8 +29,9 @@ session up to 2 private, temporary files (PDF/TXT/MD, 5 MB, 50 pages, 400k chars
 uploads" below. Also fixed a cold-start race: concurrent first page loads each built a ChromaDB client
 (`lru_cache` isn't thread-safe) and some visitors got "Could not reach the document index";
 `researchpilot/caching.build_once` now guards the retriever, the ONNX models and the session registry.
+UI redesign (2026-10-12): centred 820 px reading column (layout centered), Inter (loaded by an @import in `app/styles.css`; the theme's "Inter:<url>" form is ignored in [theme.light]/[theme.dark]), smaller heading scale, compact hero, 2x2 suggestion cards, citation chips that jump to source cards (snippet from the best-matching sentence, "Open PDF at page N" for arXiv, full passage in an expander), one neutral style for every alert, a first-start setup panel with progress, a questions-left meter, and hidden Streamlit chrome. All styling is in `app/styles.css` (read on every run), the helpers that depend on it in `app/ui.py`, the pure pieces in `app/render.py` (unit-tested). Muted colours are color-mix() of the text colour so one rule works in both themes; a Playwright contrast audit found every styled text at 4.76:1 or more. Don't hide `stToolbar`: it holds the phone's open-sidebar button.
 
-**Tests:** 221 collected = 220 fast (`-m "not slow"`) + 1 slow; ruff clean. Update when it changes.
+**Tests:** 230 collected = 229 fast (`-m "not slow"`) + 1 slow; ruff clean. Update when it changes.
 
 **Hosting plan:** the main host is Streamlit Community Cloud (free, ~2.7 GB RAM): entry point
 `app/streamlit_app.py`, Python 3.12, settings as quoted top-level TOML secrets
@@ -70,7 +71,7 @@ so these parts have NOT yet run against the real libraries and need verifying fi
   the DEPLOY.md checklist hasn't been run on it yet). Hugging Face Docker Spaces now need a paid plan, so that path (Stage 6) is kept but is no longer the main one.
 
 Already verified: pure-Python logic (chunking, BM25, RRF, citations, evidence selection, agent
-nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 220 fast tests
+nodes, CLI, metrics). Requires Python 3.12+; tested on 3.12.4 (3.14 is untested): 229 fast tests
 (`pytest -m "not slow"`) and 1 slow test (`pytest -m slow`) pass, `ruff` is clean, and
 `requirements.txt` is pinned to the versions that ran. Verified against the real libraries in
 Stage 1: ChromaDB calls in `retrieval/vector_store.py`, FastEmbed embeddings and reranker (slow
