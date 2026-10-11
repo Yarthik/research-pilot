@@ -33,7 +33,7 @@ def test_no_question_limit_by_default(loaded_retriever, monkeypatch):
     assert not at.exception
     assert not at.chat_input[0].disabled
     assert _example_buttons(at)
-    assert not any("Demo limit" in c.value for c in at.sidebar.caption)
+    assert not any("questions left" in c.value for c in at.sidebar.caption)
 
 
 def test_question_limit_reached_disables_the_chat(loaded_retriever, monkeypatch):
@@ -44,14 +44,14 @@ def test_question_limit_reached_disables_the_chat(loaded_retriever, monkeypatch)
     assert at.chat_input[0].disabled
     assert any("allows 2 questions per session" in i.value for i in at.info)
     assert not _example_buttons(at)  # examples would otherwise bypass the disabled input
-    assert any("0 of 2 left" in c.value for c in at.sidebar.caption)
+    assert any("0 of 2 questions left" in c.value for c in at.sidebar.caption)
 
 
 def test_asking_counts_towards_the_limit(loaded_retriever, fake_llm, monkeypatch):
     fake_llm.responses = {"ResearchPlan": [PLAN], "ContextGrade": [{"sufficient": True}], "Answer": [ANSWER]}
     at = _app(monkeypatch, DEMO_MAX_QUESTIONS="1").run()
     assert not at.chat_input[0].disabled
-    assert any("1 of 1 left" in c.value for c in at.sidebar.caption)
+    assert any("1 of 1 questions left" in c.value for c in at.sidebar.caption)
 
     at.chat_input[0].set_value("How does LoRA work?").run()
     assert not at.exception
@@ -79,8 +79,11 @@ def test_auto_ingest_retries_only_the_missing_sample_papers(retriever, monkeypat
 
     monkeypatch.setattr(pipeline, "ingest", fake_ingest)
     st.cache_resource.clear()
-    _app(monkeypatch, AUTO_INGEST_SAMPLES="true", ALLOW_INGEST="false").run()
+    first = _app(monkeypatch, AUTO_INGEST_SAMPLES="true", ALLOW_INGEST="false").run()
     assert calls == [samples]
+    assert not first.exception
+    assert any("Setting up the demo" in m.value for m in first.markdown)  # the first-start panel explains the wait
+    assert any("1 paper couldn't be downloaded" in w.value for w in first.warning)
     AppTest.from_file(str(APP), default_timeout=60).run()  # next page load
     assert calls == [samples, samples[-1:]]  # only the paper that failed is fetched again
     AppTest.from_file(str(APP), default_timeout=60).run()
@@ -108,7 +111,7 @@ def test_rate_limit_shows_a_friendly_message_not_the_raw_error(
 
     # an unanswered question doesn't use up the visitor's allowance, and the message stays on later reruns
     assert at.session_state["questions_asked"] == 0
-    assert any("2 of 2 left" in c.value for c in at.sidebar.caption)
+    assert any("2 of 2 questions left" in c.value for c in at.sidebar.caption)
     at.run()
     assert any(expected in w.value for w in at.warning)
     assert not at.chat_input[0].disabled
@@ -199,6 +202,10 @@ def test_answer_shows_agent_steps_and_a_natural_footer(loaded_retriever, fake_ll
     steps = next(e for e in at.expander if e.label.startswith("Agent steps"))
     assert any("Planned 1 search: LoRA rank decomposition" in m.value for m in steps.markdown)
     assert any(c.value.startswith("Answered in") and "1 search round ·" in c.value for c in at.caption)
+    answer = next(m.value for m in at.markdown if "LoRA injects" in m.value)
+    assert '<a class="rp-cite" href="#m1-1"' in answer  # the [1] marker is a chip linking to its source card
+    assert any('id="m1-1"' in m.value and "rp-src-title" in m.value for m in at.markdown)
+    assert any(e.label == "Show full passage" for e in at.expander)
     assert "(s)" not in " ".join(c.value for c in at.caption)
 
     at.toggle[0].set_value(False).run()  # steps hidden, the answer stays
@@ -252,12 +259,12 @@ def test_questions_search_the_askers_uploads_and_still_count_towards_the_limit(l
     alice = _session_app(monkeypatch, "alice", DEMO_MAX_QUESTIONS="1").run()
     alice.chat_input[0].set_value("Why do zebras migrate?").run()
     assert not alice.exception
-    assert any(e.label.startswith("[1] zebras") for e in alice.expander)  # cited from her private file
+    assert any('class="rp-src-title">zebras' in m.value for m in alice.markdown)  # cited from her private file
     assert alice.chat_input[0].disabled and alice.session_state["questions_asked"] == 1
 
     bob = _session_app(monkeypatch, "bob").run()
     bob.chat_input[0].set_value("Why do zebras migrate?").run()
-    assert not any("zebras" in e.label for e in bob.expander)
+    assert not any("rp-src-title" in m.value and "zebras" in m.value for m in bob.markdown)
 
 
 @pytest.mark.parametrize("env", [{"ALLOW_INGEST": "false"}, {"ALLOW_INGEST": "true", "ALLOW_SESSION_UPLOADS": "true"}])
@@ -278,4 +285,4 @@ def test_a_boolean_secret_makes_the_page_read_only(loaded_retriever, monkeypatch
     assert not at.exception
     assert any("fixed set of documents" in i.value for i in at.sidebar.info)
     assert not at.get("file_uploader")
-    assert any("3 of 3 left" in c.value for c in at.sidebar.caption)
+    assert any("3 of 3 questions left" in c.value for c in at.sidebar.caption)

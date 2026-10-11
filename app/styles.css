@@ -1,0 +1,159 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+/* ResearchPilot's look, loaded by app/ui.py. See ui.py for how colours stay readable in both themes.
+   --rp-primary must match primaryColor in .streamlit/config.toml. */
+:root { --rp-primary: #2F6FE4; --rp-width: 820px; }
+.stApp {
+  --rp-muted: color-mix(in srgb, currentColor 72%, transparent);
+  --rp-border: color-mix(in srgb, currentColor 14%, transparent);
+  --rp-border-strong: color-mix(in srgb, currentColor 28%, transparent);
+  --rp-tint: color-mix(in srgb, currentColor 3.5%, transparent);
+  --rp-accent-text: color-mix(in srgb, var(--rp-primary) 65%, currentColor);
+  --rp-accent-tint: color-mix(in srgb, var(--rp-primary) 10%, transparent);
+}
+
+/* ---- Streamlit chrome: everything that can go without breaking the app ---- */
+/* Not stToolbar itself: it holds the button that opens the sidebar on a phone. */
+[data-testid="stDecoration"], [data-testid="stStatusWidget"], [data-testid="stMainMenu"], #MainMenu,
+[data-testid="stAppDeployButton"], [data-testid="stToolbarActions"], footer { display: none !important; }
+[data-testid="stToolbar"] { background: transparent; }
+header[data-testid="stHeader"] { background: transparent; height: 2.5rem; }
+
+/* ---- One centred reading column for the hero, messages and the chat input ---- */
+[data-testid="stMainBlockContainer"] { max-width: var(--rp-width); padding: 2.75rem 1.5rem 2rem; }
+[data-testid="stBottomBlockContainer"] { max-width: var(--rp-width); padding-left: 1.5rem; padding-right: 1.5rem; }
+[data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"] { gap: 0.75rem; }
+@media (max-width: 640px) {
+  [data-testid="stMainBlockContainer"] { padding: 3rem 1rem 1.5rem; }
+  [data-testid="stBottomBlockContainer"] { padding-left: 1rem; padding-right: 1rem; }
+}
+
+/* ---- Type ---- */
+/* Set on the container only: a child using color-mix(currentColor) would be muted twice. */
+[data-testid="stCaptionContainer"] { color: var(--rp-muted); }
+[data-testid="stCaptionContainer"] p { color: inherit; }
+.stApp a:focus-visible, .stApp button:focus-visible, .stApp summary:focus-visible,
+.stApp [role="button"]:focus-visible { outline: 2px solid var(--rp-primary) !important; outline-offset: 2px; }
+
+/* ---- Landing hero ---- */
+.st-key-rp-hero { gap: 0.5rem !important; }
+.st-key-rp-hero h1 { padding: 0; line-height: 1.2; letter-spacing: -0.02em; }
+.st-key-rp-hero [data-testid="stHeading"] { margin-bottom: 0.35rem; }
+.st-key-rp-hero [data-testid="stMarkdownContainer"] p { color: var(--rp-muted); font-size: 1.0625rem; line-height: 1.55; }
+.st-key-rp-how [data-testid="stExpander"] details,
+.st-key-rp-how [data-testid="stExpander"] details:hover { border: 0; background: transparent; }
+.st-key-rp-how summary { padding: 0.15rem 0; width: fit-content; }
+.st-key-rp-how summary p, .st-key-rp-how summary [data-testid="stIconMaterial"] {
+  font-size: 0.875rem !important; font-weight: 500; color: var(--rp-accent-text) !important;
+}
+.st-key-rp-how [data-testid="stExpanderDetails"] {
+  border-left: 2px solid var(--rp-border); padding: 0.25rem 0 0.25rem 1rem; margin-left: 0.4rem; font-size: 0.925rem;
+}
+.rp-section-label { font-size: 0.8125rem; font-weight: 600; color: var(--rp-muted); margin: 0.5rem 0 0.4rem; }
+
+/* ---- Example questions: a 2x2 grid of left-aligned suggestion cards ---- */
+.st-key-rp-examples button {
+  width: 100%; min-height: 4.75rem; justify-content: flex-start; align-items: flex-start; text-align: left;
+  padding: 0.7rem 0.9rem; border: 1px solid var(--rp-border); border-radius: 0.75rem; background: var(--rp-tint);
+  color: inherit; transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.st-key-rp-examples button:hover, .st-key-rp-examples button:focus-visible {
+  border-color: var(--rp-primary); background: var(--rp-accent-tint); color: inherit;
+}
+.st-key-rp-examples button:active { background: color-mix(in srgb, var(--rp-primary) 16%, transparent); color: inherit; }
+.st-key-rp-examples button > div, .st-key-rp-examples button span { justify-content: flex-start; text-align: left; width: 100%; }
+.st-key-rp-examples button p { text-align: left; font-size: 0.9375rem; font-weight: 400; line-height: 1.4; margin: 0; }
+.st-key-rp-examples button br { display: none; }
+.st-key-rp-examples .stMarkdownColoredText {
+  display: block; margin-bottom: 0.2rem; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.01em;
+  color: var(--rp-muted) !important;
+}
+
+/* ---- Messages ---- */
+[data-testid="stChatMessage"] { padding: 0.5rem 0; gap: 0.75rem; background: transparent; }
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
+  background: var(--rp-tint); border-radius: 0.75rem; padding: 0.6rem 0.75rem;
+}
+[class*="st-key-rp-steps"] [data-testid="stExpander"] details { border: 0; background: transparent; }
+[class*="st-key-rp-steps"] summary { padding: 0.1rem 0; width: fit-content; }
+[class*="st-key-rp-steps"] summary p { font-size: 0.8125rem; color: var(--rp-muted); }
+[class*="st-key-rp-steps"] [data-testid="stExpanderDetails"] { border-left: 2px solid var(--rp-border); padding: 0 0 0 0.9rem; margin-left: 0.4rem; }
+[class*="st-key-rp-steps"] [data-testid="stExpanderDetails"] p { font-size: 0.8125rem; color: var(--rp-muted); }
+
+/* Citation chips; the hidden brackets keep "[1]" when the answer is copied */
+.rp-cites { white-space: nowrap; }
+/* Zero-size but inline, so copying and innerText keep "[1]" on the same line as the text. */
+.rp-cite-copy { font-size: 0; line-height: 0; color: transparent; }
+a.rp-cite {
+  display: inline-block; min-width: 1.3rem; padding: 0.05rem 0.32rem; margin: 0 0.08rem; border-radius: 0.4rem;
+  font-size: 0.72rem; font-weight: 600; line-height: 1.3; text-align: center; vertical-align: 0.1em;
+  color: inherit !important; text-decoration: none !important;
+  background: var(--rp-accent-tint); border: 1px solid color-mix(in srgb, var(--rp-primary) 35%, transparent);
+}
+a.rp-cite:hover { background: var(--rp-primary); border-color: var(--rp-primary); color: #fff !important; }
+
+/* Source cards */
+.rp-sources-label { font-size: 0.8125rem; font-weight: 600; color: var(--rp-muted); margin: 0.25rem 0 0.4rem; }
+[class*="st-key-rp-src-"] {
+  gap: 0 !important; padding: 0.7rem 0.9rem 0.3rem; border: 1px solid var(--rp-border); border-radius: 0.75rem;
+  background: var(--rp-tint); transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+[class*="st-key-rp-src-"]:has(.rp-src:target) {
+  border-color: var(--rp-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--rp-primary) 22%, transparent);
+}
+.rp-src { scroll-margin-top: 4rem; }
+.rp-src-head { display: flex; gap: 0.5rem; align-items: baseline; font-size: 0.9rem; font-weight: 600; line-height: 1.35; }
+.rp-src-n {
+  flex: none; min-width: 1.3rem; padding: 0.05rem 0.3rem; border-radius: 0.4rem; text-align: center;
+  font-size: 0.72rem; background: var(--rp-accent-tint); border: 1px solid color-mix(in srgb, var(--rp-primary) 35%, transparent);
+}
+.rp-src-meta { font-weight: 400; color: var(--rp-muted); }
+.rp-src-snippet { margin: 0.35rem 0 0.3rem !important; font-size: 0.875rem; line-height: 1.5; color: var(--rp-muted); }
+.rp-src-open, .rp-src-file { font-size: 0.8125rem; }
+.rp-src-open { color: var(--rp-accent-text) !important; text-decoration: none !important; font-weight: 500; }
+.rp-src-open:hover { text-decoration: underline !important; }
+.rp-src-open, .rp-src-file { display: inline-block; margin-bottom: 0.15rem; }
+.rp-src-file { color: var(--rp-muted); }
+[class*="st-key-rp-src-"] [data-testid="stExpander"] details { border: 0; background: transparent; }
+[class*="st-key-rp-src-"] summary { padding: 0.3rem 0; width: fit-content; }
+[class*="st-key-rp-src-"] summary p { font-size: 0.8125rem; color: var(--rp-muted); }
+[class*="st-key-rp-src-"] [data-testid="stExpanderDetails"] { padding: 0 0 0.5rem; font-size: 0.875rem; }
+
+/* ---- Notices: info, warning, error and success share one neutral style with a coloured edge ---- */
+[data-testid="stAlertContainer"] {
+  background: var(--rp-tint) !important; color: inherit !important; border: 1px solid var(--rp-border);
+  border-left: 3px solid var(--rp-primary); border-radius: 0.6rem; padding: 0.65rem 0.85rem;
+}
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]) { border-left-color: #D97706; }
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"]) { border-left-color: #DC2626; }
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]) { border-left-color: #16A34A; }
+[data-testid^="stAlertContent"], [data-testid^="stAlertContent"] p { color: inherit !important; font-size: 0.9rem; }
+
+/* ---- Sidebar ---- */
+[data-testid="stSidebarHeader"] { height: 2.75rem; padding-top: 0.5rem; padding-bottom: 0; }
+[data-testid="stSidebarUserContent"] { padding-top: 0.25rem; padding-bottom: 1.5rem; }
+[data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"] { gap: 0.6rem; }
+[data-testid="stSidebar"] hr { margin: 0.4rem 0; }
+.rp-brand { font-size: 1rem; font-weight: 700; letter-spacing: -0.01em; }
+.rp-side-label {
+  font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--rp-muted);
+  margin: 0.5rem 0 0.35rem;
+}
+.st-key-rp-docs ul { list-style: none; padding: 0; margin: 0; }
+.st-key-rp-docs li { margin: 0 0 0.4rem; padding: 0; font-size: 0.875rem; line-height: 1.35; }
+.st-key-rp-docs a { color: inherit !important; text-decoration: none; }
+.st-key-rp-docs a::after { content: " ↗"; font-size: 0.75em; color: var(--rp-muted); }
+.st-key-rp-docs a:hover { text-decoration: underline; color: var(--rp-accent-text) !important; }
+.st-key-rp-mydocs [data-testid="stMarkdownContainer"] p { font-size: 0.875rem; line-height: 1.35; }
+[class*="st-key-rm-"] button { min-height: 1.9rem; padding: 0.1rem 0.45rem; width: 100%; }
+[class*="st-key-rm-"] button p { font-size: 0.8125rem; }
+.rp-meter { height: 4px; border-radius: 2px; background: var(--rp-border); overflow: hidden; margin-top: -0.4rem; }
+.rp-meter > span { display: block; height: 100%; border-radius: 2px; background: var(--rp-primary); }
+[data-testid="stFileUploaderDropzone"] {
+  background: var(--rp-tint); border: 1px dashed var(--rp-border-strong); border-radius: 0.6rem; padding: 0.6rem 0.75rem;
+}
+[data-testid="stFileUploaderDropzone"]:hover { border-color: var(--rp-primary); }
+[data-testid="stFileUploaderDropzoneInstructions"] { color: var(--rp-muted); }
+[data-testid="stFileUploaderDropzoneInstructions"] * { color: inherit !important; }
+
+/* ---- First-start setup panel ---- */
+.st-key-rp-setup { border: 1px solid var(--rp-border); border-radius: 0.75rem; padding: 1rem 1.1rem; background: var(--rp-tint); }

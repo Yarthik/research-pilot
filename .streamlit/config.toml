@@ -1,17 +1,33 @@
 # Streamlit settings for the demo UI (read from the working directory by `streamlit run`).
+# Styling beyond what the theme supports is in app/styles.css.
 
 [client]
-# Hide the "Deploy" button and the developer menu.
+# Hide the "Deploy" button and the developer menu, and the (unused) multipage navigation.
 toolbarMode = "minimal"
+showSidebarNavigation = false
 
-# One accent colour instead of Streamlit's default red. It is set for both themes (not under [theme],
-# which would replace them with a single custom light theme), so visitors keep light and dark mode.
-# #2F6FE4 has a 4.6:1 contrast with white text on buttons and 4.1:1 against the dark background.
+# Everything is set for both themes (not under [theme], which would replace them with a single custom
+# light theme), so visitors keep light and dark mode.
+# - One accent colour instead of Streamlit's default red: #2F6FE4 has 4.6:1 contrast with white text on
+#   buttons and 4.1:1 against the dark background, so small text uses the link colours below instead.
+# - Links: #2A63CC is 5.0:1 or more on the light backgrounds, #7AA7F5 6.1:1 or more on the dark ones.
+# - Inter (loaded by app/styles.css from Google Fonts; falls back to the system sans-serif), and a
+#   smaller heading scale. The "Inter:<url>" form is ignored in [theme.light]/[theme.dark].
 [theme.light]
 primaryColor = "#2F6FE4"
+linkColor = "#2A63CC"
+font = "Inter, sans-serif"
+headingFontSizes = ["2rem", "1.375rem", "1.125rem", "1rem", "0.875rem", "0.8125rem"]
+headingFontWeights = [700, 600, 600, 600, 600, 600]
+baseRadius = "0.6rem"
 
 [theme.dark]
 primaryColor = "#2F6FE4"
+linkColor = "#7AA7F5"
+font = "Inter, sans-serif"
+headingFontSizes = ["2rem", "1.375rem", "1.125rem", "1rem", "0.875rem", "0.8125rem"]
+headingFontWeights = [700, 600, 600, 600, 600, 600]
+baseRadius = "0.6rem"
 
 [server]
 # Matches the default MAX_UPLOAD_MB=20. The Docker image passes --server.maxUploadSize=$MAX_UPLOAD_MB,

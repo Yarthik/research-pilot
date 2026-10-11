@@ -125,3 +125,134 @@ def test_rate_limit_notice_is_friendly_and_points_to_the_repo():
     assert "try again in a minute" in busy and "today" not in busy
     for text in (daily, busy):
         assert "429" not in text and "Error" not in text
+
+
+# --------------------------------------------------------------------------- citation chips
+CITES = [
+    {"n": 1, "title": "LoRA", "source": "https://arxiv.org/pdf/2106.09685", "page": 4},
+    {"n": 2, "title": 'Notes "draft"', "source": "notes.txt", "page": None},
+]
+
+
+def _visible_and_copy_text(html_text: str) -> tuple[str, str]:
+    """What a reader sees (hidden copy-only spans removed) and what copying gives (all text)."""
+    import re
+
+    visible = re.sub(r'<span class="rp-cite-copy">.*?</span>', "", html_text)
+    strip = lambda s: re.sub(r"<[^>]+>", "", s)  # noqa: E731
+    return strip(visible), strip(html_text).replace("&lt;", "<")
+
+
+def test_citations_become_chips_that_link_to_their_source_cards():
+    from render import cite_chips
+
+    out = cite_chips("Frozen weights [1][2], see [1, 2].", {1, 2}, "m3", {1: "LoRA"})
+    assert out.count('class="rp-cite"') == 4
+    assert 'href="#m3-1"' in out and 'href="#m3-2"' in out and 'title="Source 1: LoRA"' in out
+    visible, copied = _visible_and_copy_text(out)
+    assert visible == "Frozen weights 12, see 12."  # chips only
+    assert copied == "Frozen weights [1][2], see [1, 2]."  # copying keeps the plain-text form
+
+
+def test_ranges_invalid_numbers_and_links_are_handled():
+    from render import cite_chips
+
+    out = cite_chips("Range [1-3], unknown [7], mixed [2, 9], a link [1](https://x.org).", {1, 2}, "p")
+    assert '<a class="rp-cite" href="#p-1" title="Source 1">1-3</a>' in out  # a range links to its first source
+    assert "unknown [7]" in out  # not a source: left as written
+    assert 'href="#p-2"' in out and ">9</a>" not in out and "</span>9<span" in out  # 9 stays plain text
+    assert "[1](https://x.org)" in out  # a Markdown link is not a citation
+    assert _visible_and_copy_text(out)[1] == "Range [1-3], unknown [7], mixed [2, 9], a link [1](https://x.org)."
+
+
+def test_answer_html_keeps_maths_and_code_and_neutralises_html():
+    from render import answer_html
+
+    out = answer_html(
+        "Use $W[1]$ and `x[1]` here [1]. <script>alert(1)</script> <img src=x onerror=y> a < b", CITES, "m0"
+    )
+    assert "$W[1]$" in out and "`x[1]`" in out  # untouched: not chips inside maths or code
+    assert out.count('class="rp-cite"') == 1
+    assert "<script" not in out and "<img" not in out and "&lt;script>" in out and "&lt;img" in out
+    assert "a < b" in out  # a comparison isn't a tag
+    assert 'title="Source 2: Notes &quot;draft&quot;"' not in out  # source 2 isn't cited here
+    assert "Notes &quot;draft&quot;" in answer_html("See [2].", CITES, "m0")  # titles are escaped in attributes
+
+
+# --------------------------------------------------------------------------- snippets, URLs, cards
+def test_snippet_starts_at_the_sentence_that_best_matches_the_answer():
+    from render import best_snippet, citing_sentences
+
+    passage = " ".join(["Background sentence number one about many unrelated things."] * 6) + (
+        " LoRA freezes the pretrained weights and trains rank decomposition matrices. "
+        + " ".join(["A closing remark about evaluation and other topics entirely."] * 6)
+    )
+    answer = "It freezes the weights [1]. RAG retrieves passages [2]."
+    context = citing_sentences(answer, 1)
+    assert context == "It freezes the weights [1]."
+    snippet = best_snippet(passage, context)
+    assert snippet.startswith("…LoRA freezes the pretrained weights") and snippet.endswith("…")
+    assert len(snippet) <= 252
+    assert " " in snippet and not snippet[1:-1].endswith(" ")  # cut on a word boundary
+
+
+def test_snippet_falls_back_to_the_start_and_keeps_short_passages_whole():
+    from render import best_snippet, citing_sentences
+
+    passage = "First sentence here. " + "Filler words go on and on. " * 20
+    snippet = best_snippet(passage, "Something about quantum chromodynamics.")
+    assert snippet.startswith("First sentence here.") and snippet.endswith("…") and len(snippet) <= 251
+    assert best_snippet("  Short\npassage.  ", "anything") == "Short passage."
+    # A sentence near the end still gets a full window that contains it.
+    tail = best_snippet("Filler words go on and on. " * 20 + "Zebras migrate.", "zebras")
+    assert tail.startswith("…") and tail.endswith("Zebras migrate.") and len(tail) >= 200
+    assert citing_sentences("No citations here.", 1) == "No citations here."
+
+
+def test_long_urls_are_shortened_in_passages():
+    from render import short_url, shorten_urls
+
+    url = "https://www.example.com/a/very/long/path/that/goes/on/and/on/forever.html"
+    assert short_url(url) == "example.com/a/very/long/path/that/goes/…" and len(short_url(url)) == 40
+    assert short_url("https://arxiv.org/abs/2106.09685/") == "arxiv.org/abs/2106.09685"
+    assert shorten_urls(f"See {url}, then stop.") == "See example.com/a/very/long/path/that/goes/…, then stop."
+    linked = shorten_urls(f"Code: {url}.", markdown=True)
+    assert linked == f"Code: [example.com/a/very/long/path/that/goes/…]({url})."
+    assert shorten_urls("see https://x.org/my_file_name.") == "see x.org/my_file_name."
+    assert (
+        shorten_urls("see https://x.org/my_file_name", markdown=True)
+        == r"see [x.org/my\_file\_name](https://x.org/my_file_name)"
+    )
+    assert shorten_urls("") == "" and shorten_urls(None) == ""
+
+
+def test_pdf_links_open_arxiv_papers_at_the_cited_page():
+    from render import pdf_page_url
+
+    assert pdf_page_url("https://arxiv.org/pdf/2106.09685", 4) == "https://arxiv.org/pdf/2106.09685#page=4"
+    assert pdf_page_url("https://arxiv.org/abs/2005.11401v4", 2) == "https://arxiv.org/pdf/2005.11401v4#page=2"
+    assert pdf_page_url("https://arxiv.org/pdf/2106.09685.pdf", 1) == "https://arxiv.org/pdf/2106.09685#page=1"
+    assert pdf_page_url("https://arxiv.org/pdf/2106.09685", None) is None
+    assert pdf_page_url("https://example.com/paper.pdf", 3) is None
+    assert pdf_page_url("notes.pdf", 3) is None
+
+
+def test_source_card_escapes_text_and_links_where_it_can():
+    from render import source_card_html
+
+    arxiv = source_card_html(CITES[0], "Snippet with <b>tags</b> and https://www.example.com/a/b", "m1")
+    assert 'id="m1-1"' in arxiv and "· p. 4" in arxiv
+    assert 'href="https://arxiv.org/pdf/2106.09685#page=4"' in arxiv and "Open PDF at page 4 ↗" in arxiv
+    assert 'rel="noopener noreferrer"' in arxiv and "<b>" not in arxiv and "&lt;b&gt;tags" in arxiv
+    assert "example.com/a/b" in arxiv and "https://www.example.com" not in arxiv
+    upload = source_card_html({**CITES[1], "title": "<i>x</i>"}, "text", "m1")
+    assert "p." not in upload and "<a " not in upload and "notes.txt" in upload and "&lt;i&gt;x" in upload
+    web = source_card_html({"n": 3, "title": "Web", "source": "https://blog.example.org/post", "page": None}, "t", "m1")
+    assert 'href="https://blog.example.org/post"' in web and "blog.example.org/post ↗" in web
+
+
+def test_question_meter_reports_what_is_left():
+    from render import meter_html
+
+    assert 'aria-valuenow="4"' in meter_html(4, 5) and "width: 80%" in meter_html(4, 5)
+    assert "width: 0%" in meter_html(0, 5) and "width: 100%" in meter_html(9, 5) and "width: 0%" in meter_html(1, 0)
