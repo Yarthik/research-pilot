@@ -77,7 +77,7 @@ generate: sources=10, cited=[1, 2, 6, 7]
 streamlit run app/streamlit_app.py        # http://localhost:8501
 ```
 
-Chat with your documents, watch the agent's steps live, expand each citation to see the exact passage and page, switch retrieval modes, and upload PDFs or add URLs from the sidebar. On a read-only public demo, `ALLOW_SESSION_UPLOADS=true` lets each visitor add up to two private files that only their own browser session can search ([details](docs/DEPLOY.md#private-uploads-allow_session_uploads)).
+Chat with your documents, watch the agent's steps live, click a citation or source card to read the exact passage and open the PDF at that page, switch retrieval methods, and (when the library is editable) upload PDFs or add URLs from the sidebar. On a read-only public demo, `ALLOW_SESSION_UPLOADS=true` lets each visitor attach up to two private files in the message box that only their own browser session can search ([details](docs/DEPLOY.md#private-uploads-allow_session_uploads)).
 
 ### API
 
