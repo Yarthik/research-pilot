@@ -1,61 +1,159 @@
-"""The page's look: one stylesheet (app/styles.css) and the few Streamlit helpers that depend on it.
+"""The page's components and look: one stylesheet (app/styles.css) and the Streamlit pieces that use it.
 
-Colours that must work in both themes are derived from the current text colour with color-mix(),
-so the same rule gives a muted grey on white and on the dark background. Muted text at 72% of the
-text colour is at least 4.9:1 on every background (WCAG AA). The accent is the theme's primary
-colour (.streamlit/config.toml); it's used for borders and fills, and mixed with the text colour
-where it's small text, because pure #2F6FE4 is only 4.1:1 on the dark background.
+The stylesheet starts with the design tokens (spacing, type sizes, radii, colours); everything else
+uses them. Colours that must work in both themes are derived from the current text colour with
+color-mix(), so one rule gives a muted grey on white and on the dark background (muted text at 72%
+of the text colour is at least 4.9:1 on every background, WCAG AA). The accent is the theme's
+primary colour (.streamlit/config.toml), mixed with the text colour where it's small text.
 
 Streamlit has no public class names for most elements, so the selectors use its data-testid
-attributes and the st-key-* classes of keyed containers. Checked against Streamlit 1.65.
+attributes and the st-key-* classes of keyed containers and widgets. Checked against Streamlit 1.65.
 """
 
 from __future__ import annotations
 
+import html
 from pathlib import Path
 
 import streamlit as st
-from render import best_snippet, citing_sentences, meter_html, shorten_urls, source_card_html, streamlit_markdown
+from render import (
+    best_snippet,
+    citing_sentences,
+    describe_step,
+    doc_list_html,
+    fix_small_caps,
+    pdf_page_url,
+    short_title,
+    shorten_urls,
+    source_anchor,
+    source_button_label,
+    streamlit_markdown,
+)
 
 STYLES = Path(__file__).with_name("styles.css")
+CARD_SNIPPET_CHARS = 170  # about two lines in a half-width card; the stylesheet clamps it to two
+STEP_ICONS = {
+    "plan": ":material/checklist:",
+    "retrieve": ":material/search:",
+    "grade": ":material/fact_check:",
+    "generate": ":material/edit_note:",
+}
 
 
 def inject_styles() -> None:
-    # Read on every run (about 10 KB): Streamlit reloads edited Python modules but not this file.
+    # Read on every run (about 12 KB): Streamlit reloads edited Python modules but not this file.
     st.html(f"<style>{STYLES.read_text(encoding='utf-8')}</style>")
 
 
-def section_label(text: str, sidebar_style: bool = True) -> None:
-    """A small heading: an uppercase label in the sidebar, a muted one in the chat column."""
-    css_class = "rp-side-label" if sidebar_style else "rp-section-label"
-    st.markdown(f'<div class="{css_class}">{text}</div>', unsafe_allow_html=True)
+def section_label(text: str) -> None:
+    """The one section-header style, used in the sidebar and above the sources."""
+    st.markdown(f'<div class="rp-label">{html.escape(text)}</div>', unsafe_allow_html=True)
 
 
-def example_cards(examples: list[tuple[str, str]]) -> str | None:
-    """Suggestion cards in a 2x2 grid (stacked in order on a phone). Returns the clicked question."""
+def doc_list(items: list[tuple[str, str | None]], key: str) -> None:
+    """One line per document, truncated with the full title on hover (see render.doc_list_html)."""
+    with st.container(key=key):
+        st.markdown(doc_list_html(items), unsafe_allow_html=True)
+
+
+# --------------------------------------------------------------------------- empty state
+def suggestions(examples: list[tuple[str, str]]) -> str | None:
+    """Four compact, left-aligned suggestion rows. Returns the clicked question."""
     clicked = None
-    with st.container(key="rp-examples"):
-        for row in range(0, len(examples), 2):
-            pairs = enumerate(examples[row : row + 2], start=row)
-            for col, (i, (kind, question)) in zip(st.columns(2), pairs, strict=False):  # odd count: one empty
-                if col.button(f":gray[{kind}]  \n{question}", key=f"ex-{i}", width="stretch", wrap=True):
-                    clicked = question
+    with st.container(key="rp-suggest"):
+        for i, (kind, question) in enumerate(examples):
+            if st.button(f":gray[{kind}]  \n{question}", key=f"ex-{i}", width="stretch"):
+                clicked = question
     return clicked
 
 
-def source_cards(citations: list[dict], answer: str, prefix: str) -> None:
-    """One card per cited source: title · page, a snippet, a link, and the full passage on demand."""
+@st.dialog("How it works", width="medium")
+def how_it_works_dialog(text: str) -> None:
+    st.markdown(text)
+
+
+def composer_meta(questions_left: str | None, with_how_link: bool) -> bool:
+    """The line under the composer: a "How it works" link and the questions left. True if the link was clicked."""
+    clicked = False
+    with st.container(key="rp-meta", horizontal=True, horizontal_alignment="distribute", vertical_alignment="center"):
+        if with_how_link:
+            clicked = st.button("How it works", type="tertiary", key="rp-how")
+        if questions_left:
+            st.caption(questions_left)
+    return clicked
+
+
+def file_chips(docs: list[dict]) -> str | None:
+    """The visitor's attached files as small removable chips. Returns the source to remove, if clicked."""
+    removed = None
+    with st.container(key="rp-files", horizontal=True, gap="small"):
+        for doc in docs:
+            label = short_title(doc["title"], 28)
+            if st.button(
+                label,
+                key=f"rm-{doc['source']}",
+                icon=":material/close:",
+                icon_position="right",
+                help=f"Remove {doc['title']} (private to this tab)",
+            ):
+                removed = doc["source"]
+    return removed
+
+
+# --------------------------------------------------------------------------- answers
+def steps_status(trace: list[dict], summary: str, prefix: str) -> None:
+    """A finished answer's agent steps: one collapsed line that expands to the steps."""
+    with st.container(key=f"rp-steps-{prefix}"), st.status(summary, state="complete", expanded=False):
+        for step in trace:
+            st.markdown(f"{STEP_ICONS.get(step.get('step'), '•')} {describe_step(step)}")
+
+
+def source_dialog(citation: dict) -> None:
+    """The full passage of one source, titled with its number, with a link to the PDF page if there is one."""
+
+    @st.dialog(f"Source {citation['n']}", width="medium")
+    def show() -> None:
+        page = f" · p. {citation['page']}" if citation.get("page") else ""
+        st.markdown(
+            f'<div class="rp-dialog-title">{html.escape(citation.get("title", ""))}'
+            f'<span class="rp-meta">{page}</span></div>',
+            unsafe_allow_html=True,
+        )
+        with st.container(key="rp-passage"):
+            st.markdown(streamlit_markdown(shorten_urls(fix_small_caps(citation.get("text", "")), markdown=True)))
+        source = citation.get("source") or ""
+        pdf = pdf_page_url(source, citation.get("page"))
+        if pdf:
+            st.link_button(f"Open PDF at page {citation['page']}", pdf, icon=":material/open_in_new:")
+        elif source.startswith(("http://", "https://")):
+            st.link_button("Open source", source, icon=":material/open_in_new:")
+        else:
+            st.caption(f"From your file {source}")
+
+    show()
+
+
+def source_grid(citations: list[dict], answer: str, prefix: str) -> None:
+    """Cited sources as a two-column grid of compact cards (one column on a phone).
+
+    Each card is a single button that opens the full passage. An empty anchor before it is the
+    target of the answer's citation chips, which scroll to the card and highlight it.
+    """
     if not citations:
         return
-    st.markdown('<div class="rp-sources-label">Sources</div>', unsafe_allow_html=True)
-    for citation in citations:
-        snippet = best_snippet(citation.get("text", ""), citing_sentences(answer, citation["n"]))
-        with st.container(key=f"rp-src-{prefix}-{citation['n']}"):
-            st.markdown(source_card_html(citation, snippet, prefix), unsafe_allow_html=True)
-            with st.expander("Show full passage"):
-                st.markdown(streamlit_markdown(shorten_urls(citation.get("text", ""), markdown=True)))
-
-
-def question_meter(left: int, total: int) -> None:
-    st.caption(f"{left} of {total} questions left")
-    st.markdown(meter_html(left, total), unsafe_allow_html=True)
+    section_label("Sources")
+    with st.container(key=f"rp-sources-{prefix}"):
+        for row in range(0, len(citations), 2):
+            pair = citations[row : row + 2]
+            for col, citation in zip(st.columns(2, gap="small"), pair, strict=False):  # odd count: one empty
+                number = citation["n"]
+                snippet = best_snippet(
+                    citation.get("text", ""), citing_sentences(answer, number), limit=CARD_SNIPPET_CHARS
+                )
+                with col.container(key=f"rp-src-{prefix}-{number}"):
+                    st.markdown(
+                        f'<span class="rp-anchor" id="{source_anchor(prefix, number)}"></span>', unsafe_allow_html=True
+                    )
+                    label = source_button_label(citation, shorten_urls(fix_small_caps(snippet)))
+                    if st.button(label, key=f"src-{prefix}-{number}", width="stretch", wrap=True):
+                        source_dialog(citation)

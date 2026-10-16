@@ -112,13 +112,40 @@ def model_label(provider: str, model: str) -> str:
     return f"{(model or '').rsplit('/', 1)[-1]} via {PROVIDER_NAMES.get(provider, provider)}"
 
 
-def answer_footer(result: dict) -> str:
+def steps_summary(result: dict) -> str:
+    """The collapsed agent-steps line, e.g. "Searched 1 round · 5 passages · 4.4 s"."""
     rounds = result.get("round") or 0
     passages = result.get("evidence_count", 0)
-    return (
-        f"Answered in {result.get('seconds', 0)} s · {plural(rounds, 'search round')} · "
-        f"{plural(passages, 'passage')} considered"
+    seconds = f"{round(float(result.get('seconds') or 0), 1):g}"  # 11.01 -> "11", 4.42 -> "4.4"
+    return f"Searched {plural(rounds, 'round')} · {plural(passages, 'passage')} · {seconds} s"
+
+
+def questions_left(left: int) -> str:
+    """'4 questions left', '1 question left', 'No questions left'."""
+    return "No questions left" if left <= 0 else f"{plural(left, 'question')} left"
+
+
+def how_it_works(mode_labels: dict[str, str], mode_help: dict[str, str], mode: str, max_rounds: int) -> str:
+    """The "How it works" dialog: the agent's loop, the search methods and the selected one."""
+    retry = (
+        f"If something is missing, it rewrites the searches and looks again (up to {plural(max_rounds, 'round')})."
+        if max_rounds > 1
+        else "Retrying is switched off, so it answers after one search round."
     )
+    modes = "\n".join(f"- **{label}**: {mode_help[m]}" for m, label in mode_labels.items())
+    return f"""
+1. **Plan**: splits your question into one to three focused searches.
+2. **Retrieve**: finds the most relevant passages in the documents.
+3. **Grade**: checks whether those passages are enough to answer.
+4. **Retry or answer**: {retry} Then it answers, citing the passages it used, or says the documents don't cover it.
+
+**Search methods** (choose one in the sidebar):
+
+{modes}
+
+Currently selected: **{mode_labels.get(mode, mode)}**. How well each method works is measured in the
+[evaluation]({GITHUB_URL}#evaluation).
+"""
 
 
 def describe_step(event: dict) -> str:
@@ -296,36 +323,70 @@ def pdf_page_url(source: str, page: int | None) -> str | None:
     return f"https://arxiv.org/pdf/{match.group(1)}#page={page}"
 
 
-def source_card_html(citation: dict, snippet: str, prefix: str) -> str:
-    """Header, snippet and link of one source card (the full passage is an expander below it)."""
-    number, page, source = citation["n"], citation.get("page"), citation.get("source") or ""
-    meta = f'<span class="rp-src-meta"> · p. {page}</span>' if page else ""
-    pdf = pdf_page_url(source, page)
-    if pdf:
-        footer = _external_link(pdf, f"Open PDF at page {page} ↗")
-    elif source.startswith(("http://", "https://")):
-        footer = _external_link(source, f"{short_url(source)} ↗")
-    else:
-        footer = f'<span class="rp-src-file">{html.escape(source)}</span>'
+# --------------------------------------------------------------------------- display text
+_SMALL_CAPS_SPLIT = re.compile(r"\b([A-Z]) ([A-Z]{2,})\b")
+_VOWELS = set("AEIOUY")
+# Consonant pairs that can begin an English word; "PP", "NT", "XP" can't.
+# fmt: off
+_ONSETS = {
+    "BL", "BR", "CH", "CL", "CR", "DR", "DW", "FL", "FR", "GH", "GL", "GN", "GR", "KN", "KR", "PH", "PL", "PR",
+    "PS", "PT", "QU", "RH", "SC", "SH", "SK", "SL", "SM", "SN", "SP", "SQ", "ST", "SW", "SZ", "TH", "TR", "TS",
+    "TW", "WH", "WR",
+}
+# fmt: on
+
+
+def fix_small_caps(text: str) -> str:
+    """Rejoin words that PDF extraction split at a small-caps boundary ("A PPLYING" -> "APPLYING").
+
+    Display only (passages and snippets), so the index and the retrieval eval are unaffected.
+    A capital other than A or I is never a word on its own, so "R ELATED" is rejoined; after A or I
+    the rest is rejoined only if it can't start a word, which keeps "A NEW", "A STUDY" and "I AM".
+    """
+
+    def replace(match: re.Match) -> str:
+        head, tail = match.groups()
+        if head in "AI":
+            pair = tail[:2]
+            if pair[0] in _VOWELS or pair[1] in _VOWELS or pair in _ONSETS:
+                return match.group(0)
+        return head + tail
+
+    return _SMALL_CAPS_SPLIT.sub(replace, text or "")
+
+
+_MARKDOWN_LABEL = re.compile(r"([\\`*_~#|<>$:])")
+
+
+def escape_markdown(text: str) -> str:
+    """Plain text for a Streamlit Markdown label: no formatting, maths, links or colour directives."""
+    text = " ".join((text or "").split()).replace("[", "(").replace("]", ")")
+    return _MARKDOWN_LABEL.sub(r"\\\1", text)
+
+
+def source_button_label(citation: dict, snippet: str) -> str:
+    """A source card's label: number, title, page, then a snippet (laid out by app/styles.css).
+
+    The parts are a grey span (number), bold (title), an optional grey span (page) and a final
+    grey span (snippet), so the stylesheet can place each one without per-card rules.
+    """
+    page = f" :gray[p. {citation['page']}]" if citation.get("page") else ""
     return (
-        f'<div class="rp-src" id="{source_anchor(prefix, number)}">'
-        f'<div class="rp-src-head"><span class="rp-src-n">{number}</span>'
-        f'<span class="rp-src-title">{html.escape(citation.get("title") or "")}{meta}</span></div>'
-        f'<p class="rp-src-snippet">{html.escape(shorten_urls(snippet))}</p>{footer}</div>'
+        f":gray[{citation['n']}] **{escape_markdown(citation.get('title', ''))}**{page}  \n"
+        f":gray[{escape_markdown(snippet)}]"
     )
 
 
-def _external_link(url: str, text: str) -> str:
-    return (
-        f'<a class="rp-src-open" href="{html.escape(url)}" target="_blank" rel="noopener noreferrer">'
-        f"{html.escape(text)}</a>"
-    )
-
-
-def meter_html(left: int, total: int) -> str:
-    """A thin bar showing how many demo questions are left."""
-    share = 0 if total <= 0 else round(100 * max(0, min(left, total)) / total)
-    return (
-        f'<div class="rp-meter" role="progressbar" aria-label="Questions left" aria-valuemin="0" '
-        f'aria-valuemax="{total}" aria-valuenow="{left}"><span style="width: {share}%"></span></div>'
-    )
+def doc_list_html(items: list[tuple[str, str | None]]) -> str:
+    """One-line document entries: the full title on hover, a link with a non-wrapping ↗ if there's a URL."""
+    rows = []
+    for title, url in items:
+        name = f'<span class="rp-doc-t">{html.escape(title)}</span>'
+        if url:
+            rows.append(
+                f'<li><a href="{html.escape(url)}" title="{html.escape(title)}" target="_blank" '
+                f'rel="noopener noreferrer">{name}<span class="rp-doc-x" aria-hidden="true">↗</span></a></li>'
+            )
+        else:
+            rows.append(f'<li title="{html.escape(title)}">{name}</li>')
+    return f'<ul class="rp-docs">{"".join(rows)}</ul>'
