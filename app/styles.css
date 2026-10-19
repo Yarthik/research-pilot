@@ -34,6 +34,26 @@
 [data-testid="stAppDeployButton"], [data-testid="stToolbarActions"], footer { display: none !important; }
 header[data-testid="stHeader"], [data-testid="stToolbar"] { background: transparent; }
 header[data-testid="stHeader"] { height: 2.5rem; }
+/* Narrow screens, where the reading column reaches the left edge: the transparent header would float the
+   sidebar toggle (») over the text as it scrolls by ("Lo»RA"). The header shrinks to a solid chip around it
+   instead: the page background, a hairline border, a 44 px tap target, clear of a notch. Streamlit has no
+   variable for the page background, so the header's ancestors pass it down with `inherit` (they paint the
+   colour they already sit on). Only while the toggle is there: an open sidebar has its own close button.
+   Wider than 820 px the column (760 px + padding) never reaches the toggle, so a desktop (a fine pointer)
+   is unchanged; a touch screen gets the chip at any width, for the tap target (phones in landscape). */
+@media (max-width: 820px), (pointer: coarse) {
+  .stApp :has(header[data-testid="stHeader"]) { background-color: inherit; }
+  header[data-testid="stHeader"]:has([data-testid="stExpandSidebarButton"]) {
+    top: max(var(--rp-s2), env(safe-area-inset-top)); left: max(var(--rp-s2), env(safe-area-inset-left));
+    right: auto; width: auto; height: auto; min-height: 0;
+    background-color: inherit; border: 1px solid var(--rp-border-strong); border-radius: var(--rp-radius-sm);
+  }
+  header[data-testid="stHeader"]:has([data-testid="stExpandSidebarButton"]) [data-testid="stToolbar"],
+  header[data-testid="stHeader"]:has([data-testid="stExpandSidebarButton"]) [data-testid="stToolbar"] div {
+    position: static; width: auto; height: auto; min-height: 0; padding: 0; margin: 0; background: transparent;
+  }
+  [data-testid="stExpandSidebarButton"] { width: 44px; height: 44px; margin: 0; border-radius: var(--rp-radius-sm); }
+}
 
 /* =========================================================================== base
    Note: color-mix(currentColor) is set on one element and inherited, never on a parent and its child,

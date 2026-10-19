@@ -54,6 +54,10 @@ def _retriever():
     return get_retriever()
 
 
+def _history(body: AskRequest) -> list[dict] | None:
+    return [turn.model_dump() for turn in body.history] if body.history else None
+
+
 SAMPLE_FILE = Path(__file__).resolve().parents[2] / "data" / "sample_sources.txt"
 
 
@@ -186,7 +190,7 @@ def create_app() -> FastAPI:
     def ask_question(body: AskRequest) -> dict:
         from ..agent.graph import ask
 
-        return ask(body.question, mode=body.mode, max_rounds=body.max_rounds)
+        return ask(body.question, mode=body.mode, max_rounds=body.max_rounds, history=_history(body))
 
     @app.post("/ask/stream", tags=["agent"], dependencies=[Depends(require_api_key)])
     def ask_question_stream(body: AskRequest) -> StreamingResponse:
@@ -195,7 +199,9 @@ def create_app() -> FastAPI:
 
         def events():
             try:
-                for event in ask_stream(body.question, mode=body.mode, max_rounds=body.max_rounds):
+                for event in ask_stream(
+                    body.question, mode=body.mode, max_rounds=body.max_rounds, history=_history(body)
+                ):
                     yield json.dumps(event, default=str) + "\n"
             except LLMRateLimitError as exc:  # already logged; send a typed event clients can show nicely
                 event = {"type": "error", "code": "rate_limit", "detail": str(exc), "daily": exc.daily}

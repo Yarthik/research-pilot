@@ -10,7 +10,7 @@
 
 ## Highlights
 
-- **Self-correcting LangGraph agent**: plan → retrieve → grade → (retrieve again | answer), with a full step trace streamed to the UI
+- **Self-correcting LangGraph agent**: plan → retrieve → grade → (retrieve again | answer), with a full step trace streamed to the UI; follow-up questions are rewritten from the chat history first, and a search that can't help is not repeated
 - **Hybrid retrieval**: BM25 (implemented from scratch) + dense vectors (ChromaDB), merged with Reciprocal Rank Fusion; optional cross-encoder reranking, benchmarked against plain fusion
 - **Grounded answers**: structured output, inline citations validated against the sources, and an explicit "not in the documents" path
 - **Evaluation harness**: retrieval benchmark across four retrieval modes, and LLM-judged correctness, faithfulness, abstention and a retry ablation, written straight into this README
@@ -21,17 +21,21 @@
 
 ```mermaid
 flowchart LR
-    Q([Question]) --> P[Plan<br/>split into 1-3 sub-queries]
+    Q([Question]) -- "with chat history" --> C[Condense<br/>rewrite as a<br/>standalone question]
+    Q --> P
+    C --> P[Plan<br/>split into 1-3 sub-queries]
     P --> R[Retrieve<br/>BM25 + vector → RRF<br/>optional cross-encoder]
-    R --> G{Grade<br/>is the context enough?}
-    G -- "no: rewrite queries<br/>(max 2 rounds)" --> R
-    G -- yes --> A[Answer<br/>cited, structured output]
+    R --> G{Grade<br/>sufficient · retry ·<br/>out of scope}
+    G -- "retry: rewrite queries<br/>(max 2 rounds)" --> R
+    G -- "sufficient / out of scope" --> A[Answer<br/>cited, structured output]
     A --> O([Answer + sources + trace])
 ```
 
 **Ingestion:** `PDF / URL / text → extraction (pypdf, trafilatura) → sentence-aware chunking with overlap, page numbers kept → local embeddings (bge-small) → ChromaDB + BM25 index`
 
 **Retrieval modes** (selectable per request): `vector`, `bm25`, `hybrid` (RRF, default), `hybrid_rerank` (RRF + cross-encoder).
+
+A question that names no document at all ("What is it about?", with no earlier messages) is answered with the list of documents to choose from, without a search or an LLM call.
 
 **Serving:**
 
@@ -77,7 +81,7 @@ generate: sources=10, cited=[1, 2, 6, 7]
 streamlit run app/streamlit_app.py        # http://localhost:8501
 ```
 
-Chat with your documents, watch the agent's steps live, click a citation or source card to read the exact passage and open the PDF at that page, switch retrieval methods, and (when the library is editable) upload PDFs or add URLs from the sidebar. On a read-only public demo, `ALLOW_SESSION_UPLOADS=true` lets each visitor attach up to two private files in the message box that only their own browser session can search ([details](docs/DEPLOY.md#private-uploads-allow_session_uploads)).
+Chat with your documents, watch the agent's steps live, click a citation or source card to read the exact passage and open the PDF at that page, switch retrieval methods, and (when the library is editable) upload PDFs or add URLs from the sidebar. Follow-up questions ("How much memory does it save?") work across the last few turns. On a read-only public demo, `ALLOW_SESSION_UPLOADS=true` lets each visitor attach up to two private files in the message box that only their own browser session can search; "What is it about?" right after attaching one searches only that file ([details](docs/DEPLOY.md#private-uploads-allow_session_uploads)).
 
 ### API
 
@@ -88,7 +92,7 @@ uvicorn researchpilot.api.main:app --port 8000     # interactive docs at http://
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | Status, chunk count, configured LLM and retrieval mode |
-| `POST` | `/ask` | `{"question", "mode"?, "max_rounds"?}` → answer, citations, trace |
+| `POST` | `/ask` | `{"question", "mode"?, "max_rounds"?, "history"?}` → answer, citations, trace; `history` is the earlier chat (`[{"role": "user" \| "assistant", "content"}]`) for follow-ups |
 | `POST` | `/ask/stream` | Same, as newline-delimited JSON: one event per agent step, then the result |
 | `POST` | `/ingest/urls` | `{"urls": [...]}` web pages or PDF links |
 | `POST` | `/ingest/files` | Multipart upload of PDF / TXT / MD files |
@@ -161,7 +165,7 @@ _29 questions (incl. unanswerable ones) · LLM `groq/openai/gpt-oss-120b` · jud
 - **The retry rarely fires, and it changed one answer.** 6 of 29 questions retried in the 2-round run: 3 of the 4 unanswerable ones, plus `re3`, `l5` and `c2`. The retry helped `re3`: round 2 found the passage listing ReAct's search/lookup/finish actions, so the verdict went from partial to correct. It made no difference to the other five. The only other verdict change, `r3`, did not retry; it is run-to-run variation (the second answer left out "December 2018"). That is why the totals are identical. Here the first round's evidence usually suffices, and the loop costs latency (p50 2.3 → 3.5 s, p95 4.5 → 10.4 s).
 - **Abstention.** Both configurations declined all 4 unanswerable questions. The one false abstention is `l5` (how LoRA initialises A and B). The agent said the documents don't cover it, which is honest given what it retrieved: no retrieval mode finds that passage (see the retrieval Findings), and the retry's rewritten queries missed it too. It is scored incorrect.
 - **Judging.** The judge is `qwen/qwen3.8-27b`, from a different model family than the gpt-oss agent, to reduce self-grading bias. It uses judge prompt v2. The prompt was revised once, after a spot-check showed v1 penalised answers for omitting reference details the question didn't ask for: "28.4 BLEU" was marked partial for not adding "more than 2 BLEU above the previous best". The saved 1-round answers were re-graded with v2. On answerable questions, an answer counts as an abstention only if it cites nothing and declines (via the agent's flag or its wording); a cited answer that notes a missing detail counts as an answer.
-- **Caveats.** The two configurations ran on different days to fit Groq's free-tier daily token limit, so run-to-run variation is mixed into the comparison, as `r3` shows. In 3 questions of the 2-round run (`t3`, `r3`, `c1`) the grader's structured output failed: gpt-oss returned JSON text instead of a tool call, and the grade step fell back to "sufficient". Each rejected output also said sufficient, so no retry was lost. Both runs predate two later changes: the switch to Groq's native JSON-schema structured output, which fixed this (the 3 affected grade calls had fallen back to the verdict the model gave anyway), and the answer prompt's instruction to write maths as `$...$`. Treat differences of a question or two as noise.
+- **Caveats.** The two configurations ran on different days to fit Groq's free-tier daily token limit, so run-to-run variation is mixed into the comparison, as `r3` shows. In 3 questions of the 2-round run (`t3`, `r3`, `c1`) the grader's structured output failed: gpt-oss returned JSON text instead of a tool call, and the grade step fell back to "sufficient". Each rejected output also said sufficient, so no retry was lost. Both runs predate two later changes: the switch to Groq's native JSON-schema structured output, which fixed this (the 3 affected grade calls had fallen back to the verdict the model gave anyway), and the answer prompt's instruction to write maths as `$...$`. Treat differences of a question or two as noise. Both runs also predate the grader's `out_of_scope` verdict (see Design decisions), so their unanswerable questions still show the second search round it removes.
 
 ```bash
 python -m evals retrieval --update-readme                      # ~1 minute on CPU
@@ -189,7 +193,7 @@ Everything is set through environment variables or `.env` (see [.env.example](.e
 | `TAVILY_API_KEY` | unset | Enables web search when the planner decides documents won't cover a question |
 | `API_KEY`, `ALLOW_INGEST`, `MAX_UPLOAD_MB` | unset, `true`, `20` | API protection for public deployments |
 | `AUTO_INGEST_SAMPLES`, `DEMO_MAX_QUESTIONS` | unset, unset | Public demo: ingest the sample papers on first start; cap questions per UI session (unset = unlimited) |
-| `ALLOW_SESSION_UPLOADS` | `false` | UI with `ALLOW_INGEST=false`: each session may add 2 private, temporary files (5 MB, 50 pages each) |
+| `ALLOW_SESSION_UPLOADS` | `false` | UI with `ALLOW_INGEST=false`: each session may add 2 private, temporary files (5 MB each; of a longer file, the first 50 pages are searched) |
 | `LANGSMITH_TRACING`, `LANGSMITH_API_KEY` | unset | Send LangGraph traces to LangSmith |
 
 Example models: OpenAI `gpt-4o-mini`, Anthropic `claude-haiku-4-5-20251001`, Ollama `llama3.1`. Model names change over time, so check your provider's list.
@@ -200,6 +204,8 @@ Example models: OpenAI `gpt-4o-mini`, Anthropic `claude-haiku-4-5-20251001`, Oll
 - **Cross-encoder reranking is optional, not the default.** In `hybrid_rerank`, BM25 and the bi-encoder cast a wide net (20 candidates each) and a cross-encoder reads each (question, passage) pair to keep the best 5. That is the textbook precision step, but on this corpus it lowered MRR with all three rerankers tried and cost 1–6 s per query on CPU (see Findings). Plain RRF is therefore the default, and reranking stays selectable per request; it's worth re-checking on a different corpus.
 - **Choosing evidence across retry rounds.** The agent can find more chunks than fit in the answer prompt, and keeping the first N would silently discard everything a retry found. In `hybrid_rerank` the whole pool is re-scored against the original question by the cross-encoder. In the other modes, results are interleaved by rank across sub-queries and the slots are split between earlier rounds and the newest one, so neither a retry nor a sub-query is dropped wholesale. Both behaviours have regression tests.
 - **Bounded loop.** At most two retrieval rounds, and the grader is skipped on the last round, saving an LLM call when its verdict couldn't change anything.
+- **A three-way grader verdict.** A yes/no "is the context enough?" can't tell "on topic, but a detail is missing" (searching again can help) from "the passages are about something else" (it can't), so every unanswerable question used to search a second time before the answer step abstained. The grader now returns `sufficient`, `retry` or `out_of_scope`, and `out_of_scope` goes straight to the answer step, which abstains as before. It leans towards retrying: the prompt says to choose `retry` when unsure, an `out_of_scope` that still proposes queries counts as a retry, and an unrecognised verdict falls back to the old rule (retry if there are new queries). On the eval's unanswerable questions this removed the second round while answerable questions kept their retries; there is one LLM call fewer only when more than two rounds are allowed (the last round's grade is skipped anyway), so the saving is a search round, a smaller answer prompt and its latency.
+- **Follow-ups through a condense step.** The agent answers one question at a time, so "What is it about?" after a question on LoRA would otherwise search for "it" and land on an arbitrary paper. With chat history, a condense step first rewrites the question into a standalone one from the last three exchanges (each message cut to 600 characters, answers prefixed with the titles they cited), and every later step works on that. It costs one LLM call, so it only runs when there is history, and a failed call falls back to the question as asked; without history the graph is exactly what it was, which the unchanged retrieval eval and the tests confirm. The alternative, passing the whole history to every step, would make each prompt longer and the planner's queries noisier. A question sent with a newly attached file that refers to it ("What is it about?", or "Does this person know React?" when the condense step says so) is searched in that file only, so a resume's "React" can't pull in the ReAct paper.
 - **Sized for a small host.** Profiling a cold start on the real Streamlit server showed 3.2 GB of memory, over the ~2.7 GB free-hosting limit. The cause was ONNX Runtime: embedding in batches of 64 peaked near 2 GB and the allocator never gave it back. Batches of 8 produce bit-identical vectors, peak at about 0.5 GB, and cut the cold-start ingest from 145 s to 91 s; the whole app now peaks at about 0.7 GB (0.95 GB with the reranker switched on). A test pins the batch sizes.
 - **Private uploads without touching the shared index.** Each visitor's files get a small in-memory index of their own (vectors, plus BM25 over the shared papers and their files), searched alongside the shared ChromaDB collection with the same modes and RRF. An owner field with filtered search over one shared collection would have been the obvious alternative, but the shared index would no longer be read-only, approximate (HNSW) search over a graph full of other visitors' chunks could reorder shared results, and BM25 statistics computed over everyone's files would let one visitor's uploads shift another's scores. Here isolation depends on what a session's retriever can reach, not on remembering a filter; a session without uploads searches exactly as before (the retrieval eval is unchanged), and tests check in every mode that one session never retrieves another's chunks.
 - **Graceful degradation.** If a model fails structured output, each step has a fallback (raw question as the query, plain-text answer). Configuration problems such as a missing API key, and provider rate limits or quota, are the exception: retrying or guessing can't help, so they surface as a clear error instead of a degraded answer. The UI turns a rate limit into a friendly "try again later" message and the API returns a 429.
@@ -238,6 +244,7 @@ ruff check . && ruff format --check .
 ## Limitations and next steps
 
 - Scanned PDFs need OCR first (text extraction only).
+- Conversation memory is the last three exchanges of one browser session; the agent doesn't summarise older turns.
 - One shared index; a multi-user deployment would need per-user collections and auth.
 - Answer-quality numbers depend on the LLM judge; spot-check the per-question JSON before quoting them.
 - Ideas: semantic chunking, query-time metadata filters (per document), answer caching, a domain corpus such as FDA drug labels.

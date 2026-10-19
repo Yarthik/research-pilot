@@ -14,7 +14,7 @@ ANSWER = {
 
 
 def test_happy_path_one_round(loaded_retriever, fake_llm):
-    fake_llm.responses = {"ResearchPlan": [PLAN], "ContextGrade": [{"sufficient": True}], "Answer": [ANSWER]}
+    fake_llm.responses = {"ResearchPlan": [PLAN], "ContextGrade": [{"verdict": "sufficient"}], "Answer": [ANSWER]}
     result = ask("How does LoRA work?")
     assert [s["step"] for s in result["trace"]] == ["plan", "retrieve", "grade", "generate"]
     assert result["round"] == 1
@@ -28,7 +28,7 @@ def test_self_correcting_retry(loaded_retriever, fake_llm):
         "ResearchPlan": [PLAN],
         "ContextGrade": [
             {
-                "sufficient": False,
+                "verdict": "retry",
                 "missing": "memory savings",
                 "rewritten_queries": ["LoRA GPU memory trainable parameters"],
             }
@@ -59,7 +59,7 @@ def test_max_rounds_one_disables_retry(loaded_retriever, fake_llm):
 
 
 def test_mode_override_reaches_retrieval(loaded_retriever, fake_llm):
-    fake_llm.responses = {"ResearchPlan": [PLAN], "ContextGrade": [{"sufficient": True}], "Answer": [ANSWER]}
+    fake_llm.responses = {"ResearchPlan": [PLAN], "ContextGrade": [{"verdict": "sufficient"}], "Answer": [ANSWER]}
     result = ask("How does LoRA work?", mode="bm25")
     assert result["trace"][1]["mode"] == "bm25"
 
@@ -76,7 +76,7 @@ def test_blank_question_is_rejected():
 
 
 def test_stream_yields_steps_then_result(loaded_retriever, fake_llm):
-    fake_llm.responses = {"ResearchPlan": [PLAN], "ContextGrade": [{"sufficient": True}], "Answer": [ANSWER]}
+    fake_llm.responses = {"ResearchPlan": [PLAN], "ContextGrade": [{"verdict": "sufficient"}], "Answer": [ANSWER]}
     events = list(ask_stream("How does LoRA work?"))
     assert [e["type"] for e in events] == ["step", "step", "step", "step", "result"]
     assert [e["step"] for e in events[:-1]] == ["plan", "retrieve", "grade", "generate"]

@@ -68,10 +68,17 @@ class LocalBackend:
 
         return delete_source(source)
 
-    def ask_stream(self, question: str, mode: str | None = None, owner: str | None = None) -> Iterator[dict]:
+    def ask_stream(
+        self,
+        question: str,
+        mode: str | None = None,
+        owner: str | None = None,
+        history: list[dict] | None = None,
+        attachments: list[dict] | None = None,
+    ) -> Iterator[dict]:
         from researchpilot.agent.graph import ask_stream
 
-        yield from ask_stream(question, mode=mode, owner=owner)
+        yield from ask_stream(question, mode=mode, owner=owner, history=history, attachments=attachments)
 
     # Private, temporary uploads for one browser session (ALLOW_SESSION_UPLOADS; see retrieval/session.py).
     supports_session_uploads = True
@@ -144,8 +151,17 @@ class ApiBackend:
 
     supports_session_uploads = False  # the API keeps one shared corpus (ALLOW_INGEST)
 
-    def ask_stream(self, question: str, mode: str | None = None, owner: str | None = None) -> Iterator[dict]:
-        body = {"question": question, "mode": mode}
+    def ask_stream(
+        self,
+        question: str,
+        mode: str | None = None,
+        owner: str | None = None,
+        history: list[dict] | None = None,
+        attachments: list[dict] | None = None,  # private uploads exist only in-process: not sent
+    ) -> Iterator[dict]:
+        body: dict = {"question": question, "mode": mode}
+        if history:
+            body["history"] = history
         with self.client.stream("POST", "/ask/stream", json=body) as response:
             if response.status_code >= 400:
                 response.read()

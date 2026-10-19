@@ -11,6 +11,23 @@ Set needs_web to true only if the question clearly needs recent or external info
 
 Question: {question}"""
 
+CONDENSE_PROMPT = """You prepare the latest message of a conversation for a research assistant that searches the user's documents.
+
+Conversation so far (oldest first):
+{history}
+
+{attachments}
+
+Latest message: {question}
+
+Rewrite the latest message as one standalone question that can be understood without the conversation.
+- Replace pronouns and references ("it", "this paper", "the second one", "that method") with what they refer to, using the names and titles from the conversation or the attached files.
+- If the latest message is already standalone, or changes the topic, return it unchanged.
+- Don't answer it, and don't add details or conditions the user didn't ask for.
+- Keep the user's key terms, names and acronyms exactly as written.
+
+Set about_attached_files to true only if the latest message asks about the newly attached file(s) listed above, for example "What is this about?" or "Does this person know React?". Set it to false if no files are listed, or if the message also asks about other documents."""
+
 GRADE_PROMPT = """You check whether retrieved context is enough to answer a question.
 
 Question: {question}
@@ -18,10 +35,11 @@ Question: {question}
 Context:
 {context}
 
-Decide whether the context contains the information needed to answer the question fully and accurately.
-- If it does, set sufficient to true and return an empty list of queries.
-- If it does not, say briefly what is missing and write up to 2 new search queries (different wording, more specific terms) that could find it.
-- If the question is clearly about something the documents don't cover at all, set sufficient to false and return an empty list of queries: searching again won't help."""
+Choose one verdict:
+- "sufficient": the context contains the information needed to answer the question fully and accurately. Return an empty list of queries.
+- "retry": the context is about the question's subject, but a specific detail is missing. Say briefly what is missing and write up to 2 new search queries (different wording, more specific terms) that could find it.
+- "out_of_scope": none of the passages is about the question's subject at all (for example, the question asks about a different model, event, person or topic than every passage), so searching these documents again can't help. Say briefly what the question asks about and return an empty list of queries.
+If you are unsure whether to choose "retry" or "out_of_scope", choose "retry"."""
 
 ANSWER_PROMPT = """You are a careful research assistant. Answer the question using ONLY the numbered sources below.
 

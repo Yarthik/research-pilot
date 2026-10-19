@@ -25,15 +25,70 @@ makes Streamlit scroll to the bottom on load, which hid the heading on phones. S
 lives in `app/render.py`. Then (2026-10-11): landing heading "ResearchPilot" with a fixed subtitle in every
 mode; the chat placeholder names the sample papers' topics only when the read-only sample corpus is all
 there is. `ALLOW_SESSION_UPLOADS` (default false; UI only, needs `ALLOW_INGEST=false`) gives each browser
-session up to 2 private, temporary files (PDF/TXT/MD, 5 MB, 50 pages, 400k chars; no URLs), see "Private
-uploads" below. Also fixed a cold-start race: concurrent first page loads each built a ChromaDB client
+session up to 2 private, temporary files (PDF/TXT/MD, 5 MB; only the first 50 pages / 400k chars are
+indexed; no URLs), see "Private uploads" below. Also fixed a cold-start race: concurrent first page loads each built a ChromaDB client
 (`lru_cache` isn't thread-safe) and some visitors got "Could not reach the document index";
 `researchpilot/caching.build_once` now guards the retriever, the ONNX models and the session registry.
 UI redesign (2026-10-12): centred 820 px reading column (layout centered), Inter (loaded by an @import in `app/styles.css`; the theme's "Inter:<url>" form is ignored in [theme.light]/[theme.dark]), smaller heading scale, compact hero, 2x2 suggestion cards, citation chips that jump to source cards (snippet from the best-matching sentence, "Open PDF at page N" for arXiv, full passage in an expander), one neutral style for every alert, a first-start setup panel with progress, a questions-left meter, and hidden Streamlit chrome. All styling is in `app/styles.css` (read on every run), the helpers that depend on it in `app/ui.py`, the pure pieces in `app/render.py` (unit-tested). Muted colours are color-mix() of the text colour so one rule works in both themes; a Playwright contrast audit found every styled text at 4.76:1 or more. Don't hide `stToolbar`: it holds the phone's open-sidebar button.
-UI v3 (2026-10-17, branch `ui-v3`, awaiting the owner's review; not merged to main): subtraction pass. Tokens at the top of `app/styles.css` (spacing 4-48, type 12/13/15/28, radius 8/12, colours as color-mix of the text colour on :root so dialogs, which render outside .stApp, get them). Empty state is one vertically centred group (the column's inner block has flex: 1, so it gets justify-content: center too); a submitted question is queued in `session_state.pending` and the page reruns, so the chat layout and live `st.status` appear at once. Private uploads go through `st.chat_input(accept_file="multiple")` into the same session registry (chips by the composer remove them; `st.bottom` holds the chips and the questions-left line when pinned). Steps are one `st.status` collapsing to `render.steps_summary`; sources are a two-column grid of `st.button` cards (label laid out by CSS grid: number, title, page, 2-line snippet) opening `ui.source_dialog`; chips target an anchor before each card. "How it works" is an `st.dialog`; the sidebar is brand, New chat (always present), Search method, Library, Your documents (only when attached), footer; admin controls (ALLOW_INGEST=true) sit in a *Manage library* expander. `render.fix_small_caps` rejoins "A PPLYING"-style splits in displayed passages only. Gotchas: Streamlit gives Markdown containers margin-bottom -16px (cancel it where paragraphs have no margin); Markdown icons are `span[role="img"]`; innerText applies text-transform ("YOUR DOCUMENTS"). Playwright contrast audit: every styled text 4.91:1 or more in both themes.
+UI v3 (2026-10-17, branch `ui-v3`; approved and merged to main on 2026-10-19 as 51ce8fa, branch kept): subtraction pass. Tokens at the top of `app/styles.css` (spacing 4-48, type 12/13/15/28, radius 8/12, colours as color-mix of the text colour on :root so dialogs, which render outside .stApp, get them). Empty state is one vertically centred group (the column's inner block has flex: 1, so it gets justify-content: center too); a submitted question is queued in `session_state.pending` and the page reruns, so the chat layout and live `st.status` appear at once. Private uploads go through `st.chat_input(accept_file="multiple")` into the same session registry (chips by the composer remove them; `st.bottom` holds the chips and the questions-left line when pinned). Steps are one `st.status` collapsing to `render.steps_summary`; sources are a two-column grid of `st.button` cards (label laid out by CSS grid: number, title, page, 2-line snippet) opening `ui.source_dialog`; chips target an anchor before each card. "How it works" is an `st.dialog`; the sidebar is brand, New chat (always present), Search method, Library, Your documents (only when attached), footer; admin controls (ALLOW_INGEST=true) sit in a *Manage library* expander. `render.fix_small_caps` rejoins "A PPLYING"-style splits in displayed passages only. Gotchas: Streamlit gives Markdown containers margin-bottom -16px (cancel it where paragraphs have no margin); Markdown icons are `span[role="img"]`; innerText applies text-transform ("YOUR DOCUMENTS"). Playwright contrast audit: every styled text 4.91:1 or more in both themes.
 UI v3 polish (2026-10-19, same branch): one placeholder "Ask a question…" ("Demo limit reached" when disabled, with a dashed composer); source cards sorted by citation number; the live status keeps finished steps plus one "now doing" line (`render.next_activity`); short display names (`render.short_name`: text before the first colon, else word-boundary cut at 30 chars; full title on hover and in the dialog); library arrows share one right edge; footer model on its own line; tooltips capped at `--rp-tooltip-width`; the How-it-works baseline fix is a shared line-height (Streamlit buttons set 1.6). Unexpected answer failures now show a friendly message kept in the history (details only in the log) and refund the question. A screenshot harness that runs the real app with the tests' FakeLLM (scenarios short/long/slow/uncovered/error/ratelimit/setup) lives in Claude's scratchpad, not the repo.
+Chat context (2026-10-19, branch `chat-context`, not merged; awaiting the owner's review):
+- Long or failed attachments. A PDF is read only up to its first 50 pages (`load_pdf_bytes(max_pages=...)`,
+  `Document.total_pages`) and any file is cut at 400k characters on a word boundary, instead of being rejected;
+  `add_file` returns `kept` ({unit, kept, total}) and the chip (`render.file_chip_label`) and a notice
+  (`render.kept_note`, "Indexed the first 50 of 160 pages of X.") say so. If any attached file fails (no
+  text, over 5 MB, unreadable, a third file, at capacity), the question is not sent or counted, the error
+  shows above the composer and the typed text is put back (`session_state.restore_text` -> `composer` key,
+  set before the widget is created). Notices stay until the visitor's next action (`clear_notices`). Files that
+  did attach stay attached. The composer's `max_upload_size` is the server cap (20 MB), not 5 MB: Streamlit
+  refuses a larger file in the browser (red badge) and the page never sees it, so the question used to go
+  without it; >20 MB still behaves that way. Every memory cap is unchanged.
+- Follow-ups. A `condense` node before `plan` (graph entry is `route_start`) rewrites the question into a
+  standalone one (`StandaloneQuestion`, `CONDENSE_PROMPT`) when there is history; it only runs with history (or
+  with new attachments the question refers to), falls back to the question as asked on failure, re-raises
+  rate limits. State keeps `question` as asked and `standalone`; `nodes._question()` is what plan, grade,
+  evidence selection and generate use. History: the UI sends the last 6 messages of answered exchanges
+  (answers prefixed "(Sources: titles)", questions with "(attached: ...)"); `conversation.clean_history` caps
+  it again (6 messages, 600 chars each). `/ask` and `/ask/stream` take an optional `history` (validated
+  `Turn`s, max 20) and return `standalone_question` / `clarification`; the API ignores attachments.
+- Attached-file scope. Files attached since the last question ("fresh", tracked in the UI) are passed as
+  `attachments`. A vague question with them ("What is it about?") is scoped to them without an LLM call;
+  otherwise the condense step's `about_attached_files` decides. `SessionRegistry.retriever(scope=...)` returns
+  a `ScopedRetriever` (only those files' chunks, same modes/RRF, plus each file's opening chunk); if the files
+  are gone it falls back to the session retriever and the trace says `scope_missing`.
+- Vague questions. `conversation.is_vague`: no word left after stop words, references (it, this...), document
+  nouns and generic asks (about, summarize...). With no history it routes to `clarify` (no search, no LLM): a
+  list of the library's titles plus the visitor's files, "Which document do you mean?" or, for plural
+  questions ("What are these papers about?"), "I can search N documents". Not if there's only one document.
+  The UI doesn't count it. A test checks every eval question and README example is not vague.
+- Three-way grader. `ContextGrade.verdict` is a string ("sufficient" | "retry" | "out_of_scope", parsed by
+  `nodes.parse_verdict`); `out_of_scope` skips the retry. Conservative: the prompt says retry when unsure,
+  out_of_scope with queries counts as retry, and an unrecognised verdict uses the old rule (retry if new
+  queries). The old `sufficient` field is gone (tests now script `{"verdict": "sufficient"}`).
+- React vs ReAct (item 4, investigated, no tokenizer change): with a synthetic resume, "What is it about?"
+  never retrieved the resume at all (BM25 sees only "about"; results were arbitrary CoT/ReAct chunks), and
+  "React experience" pulled ReAct chunks through BOTH signals: BM25 lower-cases (71 shared chunks contain
+  "react") and bge-small puts "React" next to the ReAct paper (pure vector mode didn't return the resume in
+  its top 5). Case-sensitive BM25 would not fix the vector side and would hurt queries like "lora"; the
+  attached-file scope fixes the real case.
+- Small caps: `render.fix_small_caps(text, context)` also rejoins a stray last letter ("REAC T" -> "REACT",
+  "AC T TRAJECTORY" -> "ACT TRAJECTORY") only if the joined word appears elsewhere in the text or the title;
+  words pypdf glued to maths symbols ("betweenW") don't count, and "W AND" is no longer glued into "WAND".
+  Checked against every chunk of the sample corpus: 6 changes, all correct.
+- Phone header: at <= 820 px or on a touch screen, the header shrinks to a solid chip around the » (page
+  background passed down with `background-color: inherit` from `.stApp`, since Streamlit has no variable for
+  it; hairline border, radius 8, 44 px button, `env(safe-area-inset-*)`). Only while the toggle exists. Desktop
+  screenshots at 1440 px are unchanged (media query false at 821-1440 px with a mouse).
+- Measured (answer eval subset, 10 questions: u1-u4, re3, l5, c2, r3, c3, m1; hybrid, 2 rounds; gpt-oss-120b,
+  judge qwen3.8-27b; 84 Groq calls). Before -> after: unanswerable questions that retried 4/4 -> 0/4 (all
+  `out_of_scope`); abstention accuracy 4/4 -> 4/4; false abstentions 1/6 -> 1/6 (l5, a retrieval miss);
+  correctness 0.83 -> 0.83 (5/6 correct both); answerable questions that retried 3/6 -> 3/6 (re3, l5, c2:
+  the same ones, verdict `retry`). Agent LLM calls per unanswerable question stay 3 (the last round's grade
+  was already skipped); the answer prompt shrinks from 8-11 passages to 5 and mean latency on those 4 went
+  10.7 s -> 4.5 s (noisy). Subset numbers are not in the README tables. Retrieval eval: identical in all four
+  modes, per question.
 
-**Tests:** 238 collected = 237 fast (`-m "not slow"`) + 1 slow; ruff clean (on ui-v3). Update when it changes.
+**Tests:** 304 collected = 303 fast (`-m "not slow"`) + 1 slow; ruff clean (on chat-context). Update when it changes.
 
 **Hosting plan:** the main host is Streamlit Community Cloud (free, ~2.7 GB RAM): entry point
 `app/streamlit_app.py`, Python 3.12, settings as quoted top-level TOML secrets
@@ -46,19 +101,18 @@ stays optional, as do Docker Compose and any container host.
 1. Run the checklist at the end of `docs/DEPLOY.md` on the live app (the host's SQLite version, CPU
    count and folder permissions were untested before deploying).
 2. Confirm the GitHub Actions run is green now that the repo is public.
-3. Pointless retries on out-of-scope questions: the grader prompt says not to search again when the
-   documents clearly don't cover a topic, but gpt-oss still rewrites the query (3 of the 6 retries in the
-   2-round eval were unanswerable questions, e.g. the FIFA one). It costs a round of latency and LLM calls.
-   Ideas: skip the retry when the new queries nearly repeat the old ones, or tighten the grader prompt;
-   measure with the answer eval.
-4. `l5` (how LoRA initialises A and B) is never retrieved by any mode, so the agent honestly abstains. The
+3. `l5` (how LoRA initialises A and B) is never retrieved by any mode, so the agent honestly abstains. The
    passage exists (page 4), but pypdf glues maths letters to words ("forB") and BM25 has no stemming.
-5. BM25 has no stemming. Snowball stemming was tried and reverted (hybrid hit rate 96% -> 92%, lower MRR);
+4. BM25 has no stemming. Snowball stemming was tried and reverted (hybrid hit rate 96% -> 92%, lower MRR);
    retry only with a larger eval set.
-6. Optional: ship the sample corpus's chunks and vectors as a snapshot, so a cold start or wake-up
+5. Optional: ship the sample corpus's chunks and vectors as a snapshot, so a cold start or wake-up
    doesn't download and embed five PDFs (about 90 s here, 2-4 min expected on the free tier).
-7. Minor: a rate-limited visitor waits ~13 s before the friendly message (3 agent retries x 3 SDK
+6. Minor: a rate-limited visitor waits ~13 s before the friendly message (3 agent retries x 3 SDK
    retries). The daily-vs-per-minute wording depends on Groq's message text.
+7. Re-run the full answer eval (both configs, on separate days) with the three-way grader and refresh the
+   README tables; the tables predate it.
+8. A file over 20 MB attached in the composer is refused by Streamlit in the browser and the question goes
+   without it (no server-side signal); raising the server cap would trade memory for this edge case.
 
 ## Status
 
@@ -159,7 +213,7 @@ index (chunks, normalised vectors, BM25 over shared chunks + own); `SessionRetri
 The shared ChromaDB collection is never written. Chosen over an owner field + filtered search because that
 would write to the shared index, could reorder shared HNSW results, and would let other sessions' files
 shift BM25 IDF. The agent gets the session via `ask_stream(..., owner=...)` -> state `owner` -> retrieve
-node. Limits: 2 files, 5 MB, 50 pages, 400k chars per file, 10 sessions at once, 1 h idle (lazy clean-up on
+node. Limits: 2 files, 5 MB, first 50 pages / 400k chars indexed per file, 10 sessions at once, 1 h idle (lazy clean-up on
 any page load plus a daemon thread every 5 min); embedding is serialised by a lock. Verified: retrieval
 eval and all 232 exact rankings unchanged (u4, an unanswerable question, varies run to run in vector modes
 even on the old code: HNSW on an off-topic query); two concurrent sessions each adding a 5 MB PDF and asking

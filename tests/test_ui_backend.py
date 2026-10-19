@@ -18,7 +18,7 @@ ANSWER = {"answer": "LoRA uses rank decomposition matrices [1].", "cited_sources
 
 @pytest.fixture(params=["local", "api"])
 def backend(request, loaded_retriever, fake_llm):
-    fake_llm.responses = {"ResearchPlan": [PLAN], "ContextGrade": [{"sufficient": True}], "Answer": [ANSWER]}
+    fake_llm.responses = {"ResearchPlan": [PLAN], "ContextGrade": [{"verdict": "sufficient"}], "Answer": [ANSWER]}
     if request.param == "local":
         return LocalBackend()
     from researchpilot.api.main import create_app

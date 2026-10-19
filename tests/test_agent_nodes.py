@@ -88,7 +88,7 @@ def test_retrieve_adds_web_results(loaded_retriever, monkeypatch):
 
 def test_grade_requests_new_queries(fake_llm):
     fake_llm.responses["ContextGrade"] = [
-        {"sufficient": False, "missing": "GPU memory", "rewritten_queries": ["LoRA GPU memory", "old query"]}
+        {"verdict": "retry", "missing": "GPU memory", "rewritten_queries": ["LoRA GPU memory", "old query"]}
     ]
     state = {
         "question": "q",

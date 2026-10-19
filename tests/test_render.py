@@ -319,3 +319,69 @@ def test_a_url_glued_to_the_previous_word_gets_a_space():
     linked = shorten_urls("athttps://x.org/a", markdown=True)
     assert linked == "at [x.org/a](https://x.org/a)"
     assert shorten_urls("(https://x.org)") == "(x.org)"  # punctuation before a URL is left alone
+
+
+def test_small_caps_stray_last_letter_is_rejoined_only_for_a_word_seen_elsewhere():
+    from render import fix_small_caps
+
+    title = "ReAct: Synergizing Reasoning and Acting in Language Models"
+    heading = "Published as a conference paper at ICLR 2023 REAC T: S YNERGIZING REASONING AND A CTING"
+    assert fix_small_caps(heading, title) == (
+        "Published as a conference paper at ICLR 2023 REACT: SYNERGIZING REASONING AND ACTING"
+    )
+    # rejoined from the passage's own words too ("Act is able to ..."), before "T TRAJECTORY" could be glued
+    assert fix_small_caps("D.2.2 AC T TRAJECTORY Act is able to") == "D.2.2 ACT TRAJECTORY Act is able to"
+    # real separate words stay apart: nothing else in the text spells them joined
+    for kept in ("softmax(QK T √dk )V", "BLEU NIST METEOR ROUGE L CIDEr", "PLAN B", "APPENDIX B.1 DETAILS"):
+        assert fix_small_caps(kept) == kept
+    assert fix_small_caps("FEVER T RAJECTORIES") == "FEVER TRAJECTORIES"  # the T belongs to the next word
+    assert fix_small_caps("H.3 C ORRELATION BETWEEN W AND ∆W") == "H.3 CORRELATION BETWEEN W AND ∆W"
+    # pypdf glues maths letters to words ("betweenW"): that is no evidence for "BETWEENW"
+    assert fix_small_caps("BETWEEN W AND ∆W. The correlation betweenW and ∆W") == (
+        "BETWEEN W AND ∆W. The correlation betweenW and ∆W"
+    )
+    assert fix_small_caps("METHODS F OR LARGE MODELS, for example") == "METHODS FOR LARGE MODELS, for example"
+    assert fix_small_caps("REAC T: S YNERGIZING") == "REAC T: SYNERGIZING"  # no evidence: left as it is
+
+
+def test_steps_for_follow_ups_vague_questions_and_out_of_scope():
+    from render import describe_step, next_activity, steps_summary
+
+    assert describe_step({"step": "condense", "rewritten": True, "question": "What is LoRA about?", "seconds": 1}) == (
+        "Read with the earlier messages as: What is LoRA about? (1 s)"
+    )
+    assert describe_step({"step": "condense", "rewritten": False, "seconds": 1}).startswith("Checked the earlier")
+    assert describe_step({"step": "condense", "files": ["Alex Morgan: CV"], "seconds": 0}).startswith(
+        "Your question is about your file Alex Morgan, so it searches only that file"
+    )
+    assert "your files a and b" in describe_step({"step": "condense", "files": ["a", "b"]})
+    assert "Couldn't use the earlier messages" in describe_step({"step": "condense", "error": "boom", "seconds": 1})
+    assert "doesn't say which document" in describe_step({"step": "clarify", "kind": "ambiguous"})
+    assert "documents as a whole" in describe_step({"step": "clarify", "kind": "library"})
+    out = {"step": "grade", "sufficient": False, "verdict": "out_of_scope", "new_queries": [], "seconds": 1}
+    expected = "Checked the passages: the documents don't cover this, so it doesn't search again (1 s)"
+    assert describe_step(out) == expected
+    assert next_activity(out) == "Writing the answer…"
+    assert next_activity({"step": "condense"}) == "Planning the searches…"
+    assert next_activity({"step": "clarify"}) is None
+    assert steps_summary({"clarification": True, "round": 0, "seconds": 0.01}) == "No search needed · 0 s"
+
+
+def test_file_chips_and_notices_say_how_much_of_a_long_file_was_indexed():
+    from render import file_chip_label, kept_note
+
+    pages = {"title": "Annual report: 2025", "kept": {"unit": "pages", "kept": 50, "total": 160}}
+    assert file_chip_label(pages) == "Annual report · 50 of 160 pages"
+    assert kept_note(pages) == "Indexed the first 50 of 160 pages of Annual report."
+    chars = {"title": "notes", "kept": {"unit": "characters", "kept": 400_000, "total": 612_345}}
+    assert file_chip_label(chars) == "notes · first 400k characters"
+    assert kept_note(chars) == "Indexed the first 400,000 of 612,345 characters of notes."
+    whole = {"title": "A very long file name that goes on and on.pdf", "kept": None}
+    assert file_chip_label(whole) == "A very long file name that…" and kept_note(whole) is None
+
+
+def test_how_it_works_mentions_follow_ups_and_stopping_early():
+    from render import how_it_works
+
+    text = how_it_works({"hybrid": "Hybrid"}, {"hybrid": "both"}, "hybrid", 2)
+    assert "**Follow-up questions**" in text and "stops early" in text

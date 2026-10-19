@@ -22,6 +22,7 @@ class Document:
     source: str  # file name or URL
     title: str
     pages: list[tuple[int | None, str]] = field(default_factory=list)  # (page number, text)
+    total_pages: int | None = None  # a PDF's page count, also when only the first pages were read
 
     @property
     def char_count(self) -> int:
@@ -129,7 +130,8 @@ def title_case_if_all_caps(title: str) -> str:
     return re.sub(r"[^\W_]+(?:['’][^\W_]+)*", fix, title)
 
 
-def _read_pdf(data: bytes) -> tuple[list[tuple[int | None, str]], str | None]:
+def _read_pdf(data: bytes, max_pages: int | None = None) -> tuple[list[tuple[int | None, str]], str | None, int]:
+    """(pages with text, title, total page count). With `max_pages`, only the first pages are read."""
     from pypdf import PdfReader
     from pypdf.errors import PdfReadError
 
@@ -151,7 +153,10 @@ def _read_pdf(data: bytes) -> tuple[list[tuple[int | None, str]], str | None]:
             spans.append((round(abs(size * tm[3] * cm[3]), 1), round(tm[5] * cm[3] + cm[5], 1), text))
 
     pages = []
+    total = len(reader.pages)
     for number, page in enumerate(reader.pages, start=1):
+        if max_pages is not None and number > max_pages:
+            break
         text = clean_pdf_text(page.extract_text(visitor_text=collect_span if number == 1 else None) or "")
         if text.strip():
             pages.append((number, text))
@@ -165,12 +170,12 @@ def _read_pdf(data: bytes) -> tuple[list[tuple[int | None, str]], str | None]:
     if not title and pages:
         first_line = next((line.strip() for line in pages[0][1].splitlines() if line.strip()), "")
         title = first_line[:120] or None
-    return pages, title_case_if_all_caps(title) if title else None
+    return pages, title_case_if_all_caps(title) if title else None, total
 
 
-def load_pdf_bytes(data: bytes, source: str) -> Document:
-    pages, title = _read_pdf(data)
-    return Document(source=source, title=title or Path(source).stem, pages=pages)
+def load_pdf_bytes(data: bytes, source: str, max_pages: int | None = None) -> Document:
+    pages, title, total = _read_pdf(data, max_pages)
+    return Document(source=source, title=title or Path(source).stem, pages=pages, total_pages=total)
 
 
 def load_pdf_file(path: str | Path) -> Document:
@@ -196,8 +201,8 @@ def load_url(url: str, timeout: float = 60) -> Document:
 
     content_type = response.headers.get("content-type", "").lower()
     if "pdf" in content_type or response.content[:5] == b"%PDF-" or url.lower().endswith(".pdf"):
-        pages, title = _read_pdf(response.content)
-        return Document(source=url, title=title or url.rstrip("/").split("/")[-1], pages=pages)
+        pages, title, total = _read_pdf(response.content)
+        return Document(source=url, title=title or url.rstrip("/").split("/")[-1], pages=pages, total_pages=total)
 
     import trafilatura
 

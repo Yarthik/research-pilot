@@ -21,7 +21,9 @@ from render import (
     citing_sentences,
     describe_step,
     doc_list_html,
+    file_chip_label,
     fix_small_caps,
+    kept_note,
     pdf_page_url,
     short_name,
     shorten_urls,
@@ -33,6 +35,8 @@ from render import (
 STYLES = Path(__file__).with_name("styles.css")
 CARD_SNIPPET_CHARS = 170  # about two lines in a half-width card; the stylesheet clamps it to two
 STEP_ICONS = {
+    "condense": ":material/forum:",
+    "clarify": ":material/help:",
     "plan": ":material/checklist:",
     "retrieve": ":material/search:",
     "grade": ":material/fact_check:",
@@ -83,18 +87,27 @@ def composer_meta(questions_left: str | None, with_how_link: bool) -> bool:
     return clicked
 
 
+def composer_notices() -> None:
+    """What happened to the files just attached: shown with the file chips, above the composer, until the
+    visitor's next action (the page clears them when something is sent, attached or removed)."""
+    for text in st.session_state.get("attach_notes", []):
+        st.info(text, icon=":material/content_cut:")
+    for text in st.session_state.get("upload_errors", []):
+        st.error(text, icon=":material/error:")
+
+
 def file_chips(docs: list[dict]) -> str | None:
     """The visitor's attached files as small removable chips. Returns the source to remove, if clicked."""
     removed = None
     with st.container(key="rp-files", horizontal=True, gap="small"):
         for doc in docs:
-            label = short_name(doc["title"])
+            note = kept_note(doc)
             if st.button(
-                label,
+                file_chip_label(doc),
                 key=f"rm-{doc['source']}",
                 icon=":material/close:",
                 icon_position="right",
-                help=f"Remove {doc['title']} (private to this tab)",
+                help=f"Remove {doc['title']} (private to this tab)." + (f" {note}" if note else ""),
             ):
                 removed = doc["source"]
     return removed
@@ -120,7 +133,8 @@ def source_dialog(citation: dict) -> None:
             unsafe_allow_html=True,
         )
         with st.container(key="rp-passage"):
-            st.markdown(streamlit_markdown(shorten_urls(fix_small_caps(citation.get("text", "")), markdown=True)))
+            text = fix_small_caps(citation.get("text", ""), citation.get("title", ""))
+            st.markdown(streamlit_markdown(shorten_urls(text, markdown=True)))
         source = citation.get("source") or ""
         pdf = pdf_page_url(source, citation.get("page"))
         if pdf:
@@ -149,15 +163,14 @@ def source_grid(citations: list[dict], answer: str, prefix: str) -> None:
             pair = citations[row : row + 2]
             for col, citation in zip(st.columns(2, gap="small"), pair, strict=False):  # odd count: one empty
                 number = citation["n"]
-                snippet = best_snippet(
-                    citation.get("text", ""), citing_sentences(answer, number), limit=CARD_SNIPPET_CHARS
-                )
+                text = fix_small_caps(citation.get("text", ""), citation.get("title", ""))
+                snippet = best_snippet(text, citing_sentences(answer, number), limit=CARD_SNIPPET_CHARS)
                 with col.container(key=f"rp-src-{prefix}-{number}"):
                     st.markdown(
                         f'<span class="rp-anchor" id="{source_anchor(prefix, number)}"></span>', unsafe_allow_html=True
                     )
                     card = dict(citation, title=short_name(citation.get("title", "")))
-                    label = source_button_label(card, shorten_urls(fix_small_caps(snippet)))
+                    label = source_button_label(card, shorten_urls(snippet))
                     full_title = citation.get("title", "")
                     if st.button(label, key=f"src-{prefix}-{number}", width="stretch", wrap=True, help=full_title):
                         source_dialog(citation)

@@ -102,7 +102,7 @@ def test_the_agent_searches_only_the_askers_private_documents(registry, loaded_r
     plan = {"sub_queries": ["zebras migrate Serengeti"], "needs_web": False}
     fake_llm.responses = {
         "ResearchPlan": [plan],
-        "ContextGrade": [{"sufficient": True}],
+        "ContextGrade": [{"verdict": "sufficient"}],
         "Answer": [{"answer": "They follow the rains [1].", "cited_sources": [1]}],
     }
     alice = ask("Why do zebras migrate?", owner="alice")
@@ -142,11 +142,16 @@ def test_at_most_two_files_per_session_and_a_same_name_upload_replaces(registry,
     assert "Penguins" in texts and "Zebras" not in texts  # the old one.txt is gone, not duplicated
 
 
-def test_pdfs_over_the_page_limit_are_rejected(registry):
-    with pytest.raises(SessionUploadError, match=f"has {MAX_PDF_PAGES + 1} pages"):
-        registry.add_file("alice", "long.pdf", make_pdf([f"Page {i}" for i in range(MAX_PDF_PAGES + 1)]))
-    info = registry.add_file("alice", "ok.pdf", make_pdf([f"Zebra page {i}" for i in range(MAX_PDF_PAGES)]))
+def test_long_pdfs_are_indexed_up_to_the_page_limit(registry, loaded_retriever):
+    # Was: rejected outright, while the question was still sent. Now the first pages are kept and the visitor told.
+    total = MAX_PDF_PAGES + 30
+    info = registry.add_file("alice", "long.pdf", make_pdf([f"Zebra page marker{i + 1}" for i in range(total)]))
     assert info["pages"] == MAX_PDF_PAGES
+    assert info["kept"] == {"unit": "pages", "kept": MAX_PDF_PAGES, "total": total}
+    texts = " ".join(c.text for c in registry.retriever("alice", loaded_retriever).docs.chunks)
+    assert f"marker{MAX_PDF_PAGES} " in texts + " " and f"marker{MAX_PDF_PAGES + 1}" not in texts
+    info = registry.add_file("alice", "ok.pdf", make_pdf([f"Zebra page {i}" for i in range(MAX_PDF_PAGES)]))
+    assert info["pages"] == MAX_PDF_PAGES and info["kept"] is None  # within the limits: nothing to say
 
 
 @pytest.mark.parametrize(
@@ -159,11 +164,48 @@ def test_files_without_text_get_a_clear_error(registry, name, data):
     assert registry.active_sessions() == 0
 
 
-def test_unreadable_pdfs_and_text_heavy_files_are_rejected(registry):
+def test_unreadable_pdfs_are_rejected(registry):
     with pytest.raises(SessionUploadError, match="couldn't be read as a PDF"):
         registry.add_file("alice", "broken.pdf", b"%PDF-1.4 this is not really a PDF")
-    with pytest.raises(SessionUploadError, match="too much text"):
-        registry.add_file("alice", "huge.txt", b"word " * (MAX_CHARS // 5 + 1))
+
+
+def test_text_heavy_files_are_cut_at_the_character_limit_on_a_word_boundary(registry, loaded_retriever):
+    words = MAX_CHARS // 5 + 5000
+    info = registry.add_file("alice", "huge.txt", b"word " * words)
+    assert info["kept"] == {"unit": "characters", "kept": MAX_CHARS, "total": words * 5}
+    chunks = registry.retriever("alice", loaded_retriever).docs.chunks
+    assert sum(len(c.text) for c in chunks) <= MAX_CHARS + len(chunks) * 200  # chunk overlap repeats a little
+    assert all(c.text.split()[-1] == "word" for c in chunks)  # no word cut in half
+
+
+def test_a_dense_pdf_is_cut_at_the_character_limit_too(registry, monkeypatch):
+    monkeypatch.setattr(session_module, "MAX_CHARS", 500)
+    pages = [" ".join(f"zebra{i}x{j}" for j in range(20)) for i in range(10)]  # ~200 characters a page
+    info = registry.add_file("alice", "dense.pdf", make_pdf(pages))
+    assert info["kept"]["unit"] == "pages" and info["kept"]["total"] == 10 and 2 <= info["kept"]["kept"] <= 3
+
+
+# --------------------------------------------------------------------------- questions about one attached file
+RESUME = b"Alex Morgan, frontend engineer. Six years building web apps with React, TypeScript and Node.js."
+
+
+@pytest.mark.parametrize("mode", RETRIEVAL_MODES)
+def test_a_scoped_retriever_searches_only_the_given_files(registry, loaded_retriever, mode):
+    registry.add_file("alice", "resume.txt", RESUME)
+    registry.add_file("alice", "zebras.txt", ALICE_TEXT)
+    scoped = registry.retriever("alice", loaded_retriever, scope=["resume.txt"])
+    assert scoped.scope == ["resume.txt"]
+    # "ReAct" in the shared corpus matches the resume's "React" for BM25 (lower-cased): scoping keeps it out
+    assert _sources(scoped.retrieve("React experience", mode=mode, final_k=5)) == {"resume.txt"}
+    # the file's opening passage is always offered, even when the words of the question don't match it
+    assert "resume.txt" in _sources(scoped.retrieve("What is it about?", mode=mode, final_k=5))
+    assert registry.retriever("bob", loaded_retriever, scope=["resume.txt"]) is loaded_retriever  # not bob's
+
+
+def test_a_scope_whose_files_are_gone_falls_back_to_the_sessions_retriever(registry, loaded_retriever):
+    registry.add_file("alice", "zebras.txt", ALICE_TEXT)
+    retriever = registry.retriever("alice", loaded_retriever, scope=["removed.pdf"])
+    assert isinstance(retriever, SessionRetriever) and not hasattr(retriever, "scope")
 
 
 def test_the_number_of_sessions_holding_uploads_is_capped(loaded_retriever, clock):

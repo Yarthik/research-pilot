@@ -29,6 +29,7 @@ from render import (  # noqa: E402
     answer_html,
     describe_step,
     how_it_works,
+    kept_note,
     model_label,
     next_activity,
     plural,
@@ -79,6 +80,8 @@ SUBTITLE = (
 PLACEHOLDER = "Ask a question…"
 LIMIT_PLACEHOLDER = "Demo limit reached"
 FAILURE_MESSAGE = "Something went wrong while answering, so this question wasn't counted. Please try again in a moment."
+NOT_SENT = "Your question wasn't sent, so it wasn't counted; it's still in the message box."
+HISTORY_MESSAGES = 6  # earlier messages sent with a question, for follow-ups (the agent caps them too)
 log = logging.getLogger("researchpilot.app")
 
 st.set_page_config(page_title="ResearchPilot", page_icon=ICON, layout="centered")
@@ -130,25 +133,58 @@ def how_it_works_text(mode: str) -> str:
     text = how_it_works(MODE_LABELS, MODE_HELP, mode, get_settings().max_retrieval_rounds)
     if session_uploads:
         text += (
-            f"\n**Your own files**: attach up to {MAX_FILES} PDF, TXT or MD files ({MAX_FILE_MB} MB and "
-            f"{MAX_PDF_PAGES} pages each) with the + button in the message box. Only this browser tab can "
-            "search them, and they're removed when you remove them, reload the page, or after an hour idle.\n"
+            f"\n**Your own files**: attach up to {MAX_FILES} PDF, TXT or MD files ({MAX_FILE_MB} MB each) with "
+            f"the + button in the message box; for a longer file, the first {MAX_PDF_PAGES} pages are searched. "
+            'Ask "What is it about?" right after attaching one and only that file is searched. Only this '
+            "browser tab can search them, and they're removed when you remove them, reload the page, or after "
+            "an hour idle.\n"
         )
     return text
 
 
-def attach_files(files) -> None:
-    """Add files from the composer to this session's private index; errors are shown under the composer."""
-    errors = []
+def attach_files(files) -> tuple[list[dict], list[str]]:
+    """Add files from the composer to this session's private index. Returns (added files, error messages).
+
+    A file over the page or text limit is added with only its first part, and a notice says so.
+    """
+    added, errors = [], []
     with st.spinner("Reading and indexing your file…"):
         for upload in files:
             try:
-                backend().add_session_file(owner, upload.name, upload.getvalue())
-            except SessionUploadError as exc:  # too big, too long, no text, too many files, at capacity
+                added.append(backend().add_session_file(owner, upload.name, upload.getvalue()))
+            except SessionUploadError as exc:  # too big, no text, unreadable, too many files, at capacity
                 errors.append(str(exc))
-            except Exception as exc:  # unexpected: keep the page working
-                errors.append(f"{upload.name} couldn't be added: {exc}")
-    st.session_state.upload_errors = errors
+            except Exception:  # unexpected: keep the page working; the details go to the log
+                log.exception("adding %r failed", upload.name)
+                errors.append(f"{upload.name} couldn't be added. Please try again, or try another file.")
+    st.session_state.attach_notes = [note for note in map(kept_note, added) if note]
+    return added, errors
+
+
+def chat_history() -> list[dict]:
+    """The last answered exchanges, for follow-up questions: {"role", "content"}, oldest first.
+
+    An answer carries the titles it cited, so "that paper" can be resolved; a question carries the
+    files attached with it. Questions that failed (rate limit, error) are left out.
+    """
+    history = []
+    for asked, reply in zip(messages[0::2], messages[1::2], strict=False):
+        if asked.get("role") != "user" or "result" not in reply:
+            continue
+        question = asked["content"]
+        if asked.get("files"):
+            question += f" (attached: {', '.join(asked['files'])})"
+        result = reply["result"]
+        titles = list(dict.fromkeys(display_title(c.get("title", "")) for c in result.get("citations", [])))
+        answer = (f"(Sources: {'; '.join(titles)}) " if titles else "") + result.get("answer", "")
+        history += [{"role": "user", "content": question}, {"role": "assistant", "content": answer}]
+    return history[-HISTORY_MESSAGES:]
+
+
+def clear_notices() -> None:
+    """The attachment notices stay until the visitor's next action, which starts afresh."""
+    for key in ("attach_notes", "upload_errors"):
+        st.session_state.pop(key, None)
 
 
 # --------------------------------------------------------------------------- shared library (ALLOW_INGEST=true)
@@ -268,6 +304,8 @@ if "questions_asked" not in st.session_state:
     st.session_state.questions_asked = 0  # not reset by "New chat", so the demo limit holds
 if "owner" not in st.session_state:
     st.session_state.owner = uuid.uuid4().hex  # this browser session's id for its private uploads
+if "restore_text" in st.session_state:  # a question held back by a failed attachment: back in the box
+    st.session_state.composer = st.session_state.pop("restore_text")
 
 # Optional per-session cap for a public demo (DEMO_MAX_QUESTIONS); None means unlimited.
 settings = get_settings()
@@ -326,8 +364,15 @@ with st.sidebar:
 # --------------------------------------------------------------------------- chat
 has_documents = bool(sources or my_docs)
 left_text = None if questions_left is None else questions_left_text(questions_left)
+# The composer accepts files up to the server's upload cap, not MAX_FILE_MB: a file it refuses in the browser
+# never reaches the page, so the question would go without it. The registry then rejects anything over
+# MAX_FILE_MB, before reading it, and the question is held back with a clear message.
 composer_options = (
-    {"accept_file": "multiple", "file_type": ["pdf", "txt", "md"], "max_upload_size": MAX_FILE_MB}
+    {
+        "accept_file": "multiple",
+        "file_type": ["pdf", "txt", "md"],
+        "max_upload_size": max(MAX_FILE_MB, int(st.get_option("server.maxUploadSize"))),
+    }
     if session_uploads
     else {}
 )
@@ -341,11 +386,6 @@ def composer(area):
         disabled=not has_documents or limit_reached,
         **composer_options,
     )
-
-
-def upload_errors() -> None:
-    for text in st.session_state.pop("upload_errors", []):
-        st.error(text, icon=":material/error:")
 
 
 def status_notices() -> None:
@@ -369,11 +409,11 @@ if landing:
             st.markdown(ICON)
             st.title("ResearchPilot", anchor=False)
             st.markdown(SUBTITLE)
-        # The same order as the pinned composer: attached-file chips, composer, meta line.
+        # The same order as the pinned composer: attached-file chips and their notices, composer, meta line.
         removed = ui.file_chips(my_docs) if my_docs else None
+        ui.composer_notices()
         submitted = composer(st.container(key="rp-composer"))
         how_clicked = ui.composer_meta(left_text, with_how_link=True)
-        upload_errors()
         status_notices()
         if has_documents and not limit_reached:
             clicked_example = ui.suggestions(EXAMPLES)
@@ -382,6 +422,8 @@ else:
         with st.chat_message(message["role"], avatar=USER_AVATAR if message["role"] == "user" else ICON):
             if message["role"] == "user":
                 st.markdown(message["content"])
+                if message.get("files"):
+                    st.caption(f":material/attach_file: {', '.join(message['files'])}")
             elif "notice" in message:  # the question couldn't be answered (e.g. the LLM quota is used up)
                 st.warning(message["notice"], icon=":material/hourglass_top:")
             elif "error" in message:  # it failed for another reason (details in the log)
@@ -390,16 +432,17 @@ else:
                 render_result(message["result"], prefix=f"m{index}")
     with st.bottom:
         removed = ui.file_chips(my_docs) if my_docs else None
+        ui.composer_notices()
     submitted = composer(st)  # pinned to the bottom
     with st.bottom:
         how_clicked = ui.composer_meta(left_text, with_how_link=False)
-        upload_errors()
     if "pending" not in st.session_state:  # not above an answer that's still being written
         status_notices()
 
 if how_clicked:
     ui.how_it_works_dialog(how_it_works_text(mode))
 if removed:
+    clear_notices()
     backend().remove_session_file(owner, removed)
     st.rerun()
 
@@ -411,18 +454,36 @@ elif submitted:
 else:
     question, files = None, []
 question = question or clicked_example
+if question or files:
+    clear_notices()
 if files:
-    attach_files(files)
+    added, errors = attach_files(files)
+    # Files attached since the last question are "new": a question that refers to them searches only them.
+    fresh = [s for s in st.session_state.get("fresh", []) if s not in {d["source"] for d in added}]
+    st.session_state.fresh = fresh + [d["source"] for d in added]
+    if errors:  # don't answer without the file the visitor meant to ask about
+        st.session_state.upload_errors = ["  \n".join(errors) + (f"  \n{NOT_SENT}" if question else "")]
+        if question:
+            st.session_state.restore_text = question
+        st.rerun()
     if not question:
         st.rerun()  # show the new chips
 if question and not limit_reached:
     # Show the question and a live status at once in the chat layout, then answer on that run.
+    fresh = set(st.session_state.pop("fresh", []))
+    current = backend().session_documents(owner) if session_uploads else []
+    attachments = [{"source": d["source"], "title": d["title"]} for d in current if d["source"] in fresh]
+    st.session_state.pending = {"question": question, "history": chat_history(), "attachments": attachments}
     st.session_state.questions_asked += 1
-    messages.append({"role": "user", "content": question})
-    st.session_state.pending = question
+    user_message = {"role": "user", "content": question}
+    if attachments:
+        user_message["files"] = [short_name(a["title"]) for a in attachments]
+    messages.append(user_message)
     st.rerun()
 
 pending = st.session_state.pop("pending", None)
+if isinstance(pending, str):  # queued by an older version of this page (a session kept across a reload)
+    pending = {"question": pending}
 if pending:
     with st.chat_message("assistant", avatar=ICON):
         result, notice, failure = None, None, None
@@ -434,9 +495,16 @@ if pending:
         ):
             done = st.container()  # finished steps, in order
             doing = st.empty()  # what the agent is doing now; replaced when each step finishes
-            doing.markdown(":material/hourglass_top: Planning the searches…")  # shown at once
+            first = "Reading it with the earlier messages…" if pending.get("history") else "Planning the searches…"
+            doing.markdown(f":material/hourglass_top: {first}")  # shown at once
             try:
-                for event in backend().ask_stream(pending, mode=mode, owner=owner if session_uploads else None):
+                for event in backend().ask_stream(
+                    pending["question"],
+                    mode=mode,
+                    owner=owner if session_uploads else None,
+                    history=pending.get("history"),
+                    attachments=pending.get("attachments"),
+                ):
                     if event["type"] == "step":
                         done.markdown(f"{ui.STEP_ICONS.get(event['step'], '•')} {describe_step(event)}")
                         activity = next_activity(event)
@@ -451,7 +519,7 @@ if pending:
             except LLMConfigError as exc:  # for whoever runs the app, so it names the settings
                 failure = f"The LLM isn't configured: {exc}. Set LLM_PROVIDER, LLM_MODEL and the API key in `.env`."
             except Exception:  # anything else: a friendly message; the details go to the log, not the page
-                log.exception("answering %r failed", pending)
+                log.exception("answering %r failed", pending["question"])
                 failure = FAILURE_MESSAGE
             doing.empty()
             if result:
@@ -463,8 +531,12 @@ if pending:
             progress.empty()
             render_result(result, prefix=f"m{len(messages)}")
             messages.append({"role": "assistant", "result": result})
+            if result.get("clarification"):  # it only listed the documents (no model call): not counted
+                st.session_state.questions_asked -= 1
             st.rerun()  # update the questions-left line, and disable the composer once the limit is hit
         st.session_state.questions_asked -= 1  # only answered questions count towards the demo limit
+        # Its files are still new: asked again, "What is it about?" still means them.
+        st.session_state.fresh = [a["source"] for a in pending.get("attachments") or []]
         if notice:
             messages.append({"role": "assistant", "notice": notice})
         else:

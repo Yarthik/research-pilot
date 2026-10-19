@@ -20,7 +20,6 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from io import BytesIO
 from pathlib import Path
 
 import numpy as np
@@ -114,35 +113,86 @@ class SessionRetriever(HybridRetriever):
         return sorted(hits, key=lambda hit: hit[1], reverse=True)[:k]
 
 
+class ScopedRetriever(HybridRetriever):
+    """Only some of a session's own files: the ones a question is about ("What is this file about?").
+
+    Same modes and fusion, over those files' chunks alone, so a word that also names something in the
+    shared papers (a resume's "React" and the ReAct paper) can't pull those in.
+    """
+
+    def __init__(self, shared: HybridRetriever, docs: SessionDocs, sources: list[str]) -> None:
+        super().__init__(store=shared.store, embed_query=shared.embed_query, score=shared.score)
+        keep = [i for i, chunk in enumerate(docs.chunks) if chunk.source in sources]
+        self.scope = sorted({docs.chunks[i].source for i in keep})
+        self.view = SessionDocs(last_used=docs.last_used, chunks=[docs.chunks[i] for i in keep])
+        self.view.vectors = docs.vectors[keep] if docs.vectors is not None and keep else None
+        self._index = BM25Index(self.view.chunks)
+
+    @property
+    def bm25(self) -> BM25Index:
+        return self._index
+
+    def vector_search(self, query: str, k: int) -> list[tuple[Chunk, float]]:
+        return self.view.search(self.embed_query(query), k)
+
+    def retrieve(self, query: str, mode: str | None = None, final_k: int | None = None) -> list[tuple[Chunk, float]]:
+        """The best matches, plus each file's opening passage (title, abstract, summary) if it isn't among them:
+        that is what a question like "What is this about?" needs, and a search for its words can miss it."""
+        results = super().retrieve(query, mode=mode, final_k=final_k)
+        found = {chunk.id for chunk, _ in results}
+        for source in self.scope:
+            first = min((c for c in self.view.chunks if c.source == source), key=lambda c: c.chunk_index)
+            if first.id not in found:
+                results.append((first, 0.0))
+        return results
+
+
 def _megabytes(size: int) -> str:
     return f"{size / (1024 * 1024):.1f} MB"
 
 
-def _load(name: str, data: bytes) -> Document:
-    """Read an uploaded file, enforcing the page and text limits before the expensive steps."""
-    if name.lower().endswith(".pdf"):
-        from pypdf import PdfReader
+def _cut(doc: Document, max_chars: int) -> Document:
+    """The document's first `max_chars` characters, ending on a word boundary."""
+    pages, used = [], 0
+    for number, text in doc.pages:
+        if used + len(text) > max_chars:
+            room = max_chars - used
+            head = text[:room].rsplit(" ", 1)[0] if " " in text[:room] else text[:room]
+            if head.strip():
+                pages.append((number, head))
+            break
+        pages.append((number, text))
+        used += len(text)
+    return replace(doc, pages=pages)
 
+
+def _load(name: str, data: bytes) -> tuple[Document, dict | None]:
+    """Read an uploaded file, keeping only what fits the page and text limits.
+
+    Returns the document and, if it was cut, what was kept: {"unit": "pages" | "characters", "kept", "total"}.
+    A PDF is read only up to MAX_PDF_PAGES, so a long one costs no more than a short one.
+    """
+    kept = None
+    if name.lower().endswith(".pdf"):
         try:
-            reader = PdfReader(BytesIO(data))
-            if reader.is_encrypted:
-                reader.decrypt("")
-            pages = len(reader.pages)
+            doc = load_pdf_bytes(data, name, max_pages=MAX_PDF_PAGES)
         except Exception as exc:
             raise SessionUploadError(
                 f"{name} couldn't be read as a PDF (it may be damaged or password-protected)."
             ) from exc
-        if pages > MAX_PDF_PAGES:
-            raise SessionUploadError(f"{name} has {pages} pages; the limit is {MAX_PDF_PAGES}.")
-        try:
-            doc = load_pdf_bytes(data, name)
-        except Exception as exc:
-            raise SessionUploadError(f"{name} couldn't be read as a PDF ({exc}).") from exc
+        total = doc.total_pages or len(doc.pages)
+        too_long = doc.char_count > MAX_CHARS
+        if too_long:
+            doc = _cut(doc, MAX_CHARS)
+        if too_long or total > MAX_PDF_PAGES:
+            last = max((number or 0 for number, _ in doc.pages), default=0)
+            kept = {"unit": "pages", "kept": last, "total": total}
     else:
         doc = Document(source=name, title=Path(name).stem, pages=[(None, data.decode("utf-8", errors="replace"))])
-    if doc.char_count > MAX_CHARS:
-        raise SessionUploadError(f"{name} has too much text for this demo (over {MAX_CHARS:,} characters).")
-    return doc
+        if doc.char_count > MAX_CHARS:
+            kept = {"unit": "characters", "kept": MAX_CHARS, "total": doc.char_count}
+            doc = _cut(doc, MAX_CHARS)
+    return doc, kept
 
 
 class SessionRegistry:
@@ -192,13 +242,19 @@ class SessionRegistry:
             docs = self._sessions.get(owner)
             return sorted(docs.files.values(), key=lambda f: f["title"].lower()) if docs else []
 
-    def retriever(self, owner: str | None, shared: HybridRetriever) -> HybridRetriever:
-        """The retriever for `owner`: the shared one if the session has no uploads."""
+    def retriever(self, owner: str | None, shared: HybridRetriever, scope: list[str] | None = None) -> HybridRetriever:
+        """The retriever for `owner`: the shared one if the session has no uploads.
+
+        With `scope`, only those of the session's files; if none of them is still there (removed, or
+        cleaned up after an idle hour), the session's normal retriever instead.
+        """
         with self._lock:
             docs = self._sessions.get(owner) if owner else None
             if docs is None or not docs.chunks:
                 return shared
             docs.last_used = self._clock()
+            if scope and any(chunk.source in scope for chunk in docs.chunks):
+                return ScopedRetriever(shared, docs, scope)
             return SessionRetriever(shared, docs)
 
     # files -----------------------------------------------------------------------
@@ -223,7 +279,7 @@ class SessionRegistry:
         with self._lock:
             self._check_room(owner, name)
 
-        doc = _load(name, data)
+        doc, kept = _load(name, data)
         settings = get_settings()
         chunks = chunk_document(doc, settings.chunk_size, settings.chunk_overlap)
         if not chunks:
@@ -238,7 +294,7 @@ class SessionRegistry:
         with self._embed_lock:
             vectors = embed([chunk.text for chunk in chunks])
 
-        info = {"source": name, "title": doc.title, "chunks": len(chunks), "pages": len(doc.pages)}
+        info = {"source": name, "title": doc.title, "chunks": len(chunks), "pages": len(doc.pages), "kept": kept}
         with self._lock:
             self._check_room(owner, name)  # again: another upload may have finished meanwhile
             docs = self._sessions.setdefault(owner, SessionDocs(last_used=self._clock()))

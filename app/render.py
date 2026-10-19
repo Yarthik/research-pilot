@@ -130,6 +130,8 @@ def steps_summary(result: dict) -> str:
     rounds = result.get("round") or 0
     passages = result.get("evidence_count", 0)
     seconds = f"{round(float(result.get('seconds') or 0), 1):g}"  # 11.01 -> "11", 4.42 -> "4.4"
+    if result.get("clarification"):  # answered with the list of documents, without searching
+        return f"No search needed · {seconds} s"
     return f"Searched {plural(rounds, 'round')} · {plural(passages, 'passage')} · {seconds} s"
 
 
@@ -150,7 +152,13 @@ def how_it_works(mode_labels: dict[str, str], mode_help: dict[str, str], mode: s
 1. **Plan**: splits your question into one to three focused searches.
 2. **Retrieve**: finds the most relevant passages in the documents.
 3. **Grade**: checks whether those passages are enough to answer.
-4. **Retry or answer**: {retry} Then it answers, citing the passages it used, or says the documents don't cover it.
+4. **Retry or answer**: {retry} When the passages are about something else entirely, it stops early: \
+searching again can't help. Then it answers, citing the passages it used, or says the documents don't cover it.
+
+**Follow-up questions**: it remembers the last few turns, so you can ask "What about its memory use?" or \
+"Which paper was that?". Before planning, it rewrites a follow-up into a question that stands on its own (one \
+extra model call, skipped for a first question). If a question doesn't say which document it means, it lists \
+them and asks.
 
 **Search methods** (choose one in the sidebar):
 
@@ -161,10 +169,52 @@ Currently selected: **{mode_labels.get(mode, mode)}**. How well each method work
 """
 
 
+def _names(titles: list[str]) -> str:
+    """ "your file X" / "your files X and Y" (short names)."""
+    names = [short_name(t) for t in titles]
+    return f"your file {names[0]}" if len(names) == 1 else f"your files {', '.join(names[:-1])} and {names[-1]}"
+
+
+def _that(titles: list[str]) -> str:
+    return "that file" if len(titles) == 1 else "those files"
+
+
+def kept_note(doc: dict) -> str | None:
+    """For a file cut to the demo's limits: "Indexed the first 50 of 160 pages of X." (None otherwise)."""
+    kept = doc.get("kept")
+    if not kept:
+        return None
+    return f"Indexed the first {kept['kept']:,} of {kept['total']:,} {kept['unit']} of {short_name(doc['title'])}."
+
+
+def file_chip_label(doc: dict) -> str:
+    """An attached file's chip: its short name, and how much was indexed if it was cut."""
+    kept = doc.get("kept")
+    name = short_name(doc["title"])
+    if not kept:
+        return name
+    if kept["unit"] == "pages":
+        return f"{name} · {kept['kept']} of {kept['total']} pages"
+    return f"{name} · first {kept['kept'] // 1000}k characters"
+
+
 def describe_step(event: dict) -> str:
     """One plain-English line for an agent step (a streamed step event or a trace entry)."""
     step = event.get("step")
     seconds = f" ({event.get('seconds', 0)} s)"
+    if step == "condense":
+        files = event.get("files")
+        if files:
+            return f"Your question is about {_names(files)}, so it searches only {_that(files)}{seconds}"
+        if event.get("error"):
+            return f"Couldn't use the earlier messages (the model call failed), so it searches as asked{seconds}"
+        if event.get("rewritten"):
+            return f"Read with the earlier messages as: {event.get('question')}{seconds}"
+        return f"Checked the earlier messages: the question stands on its own{seconds}"
+    if step == "clarify":
+        if event.get("kind") == "library":
+            return "You asked about the documents as a whole, so it lists them instead of searching"
+        return "Your question doesn't say which document it means, so it lists them instead of searching"
     if step == "plan":
         queries = event.get("queries", [])
         if event.get("error"):
@@ -182,6 +232,8 @@ def describe_step(event: dict) -> str:
             return f"Couldn't check the passages (the model call failed), so it answers with what it found{seconds}"
         if event.get("sufficient"):
             return f"Checked the passages: enough to answer{seconds}"
+        if event.get("verdict") == "out_of_scope":
+            return f"Checked the passages: the documents don't cover this, so it doesn't search again{seconds}"
         if event.get("new_queries"):
             return f"Missing: {event.get('missing')} → searching again: {'; '.join(event['new_queries'])}{seconds}"
         return f"Something is missing: {event.get('missing')}{seconds}"
@@ -194,6 +246,8 @@ def describe_step(event: dict) -> str:
 def next_activity(event: dict) -> str | None:
     """The live status's "now doing" line after a step finishes (None once the answer is written)."""
     step = event.get("step")
+    if step == "condense":
+        return "Planning the searches…"
     if step == "plan":
         return "Searching the documents…"
     if step == "retrieve":
@@ -363,23 +417,46 @@ _ONSETS = {
 # fmt: on
 
 
-def fix_small_caps(text: str) -> str:
+# A word with its last letter split off ("REAC T", "AC T"): kerning in small-caps titles and headings.
+_STRAY_LAST_LETTER = re.compile(r"\b([A-Z]{2,}) ([A-Z])\b(?![.\d])")
+_WORDS = re.compile(r"[A-Za-z]+")
+_GLUED_SYMBOL = re.compile(r"[a-z]+[A-Z]")
+# Short words that often follow a one-letter symbol ("BETWEEN W AND ∆W"): "W AND" isn't "WAND".
+_FUNCTION_WORDS = {"AND", "ARE", "AS", "AT", "BE", "BY", "FOR", "FROM", "IN", "IS", "IT", "OF", "ON", "OR", "THE", "TO"}
+
+
+def fix_small_caps(text: str, context: str = "") -> str:
     """Rejoin words that PDF extraction split at a small-caps boundary ("A PPLYING" -> "APPLYING").
 
     Display only (passages and snippets), so the index and the retrieval eval are unaffected.
     A capital other than A or I is never a word on its own, so "R ELATED" is rejoined; after A or I
     the rest is rejoined only if it can't start a word, which keeps "A NEW", "A STUDY" and "I AM".
+
+    A stray last letter ("REAC T: S YNERGIZING") is rejoined only when the joined word also appears
+    elsewhere in the text or in `context` (e.g. the title "ReAct: ..."), since "PLAN B", "ROUGE L",
+    "QK T" and "BETWEEN W" are real separate words: nothing else marks those splits. The same check
+    applies when a single capital is followed by a short function word ("W AND" stays, "F OR" -> "FOR").
     """
+    text = text or ""
+    # Not words that pypdf glued to a maths symbol ("betweenW", "forB"): they would vouch for "BETWEEN W".
+    known = {word.lower() for word in _WORDS.findall(f"{text} {context}") if not _GLUED_SYMBOL.fullmatch(word)}
+
+    def rejoin_last(match: re.Match) -> str:
+        head, letter = match.groups()
+        return head + letter if (head + letter).lower() in known else match.group(0)
 
     def replace(match: re.Match) -> str:
         head, tail = match.groups()
+        if tail in _FUNCTION_WORDS:
+            return head + tail if (head + tail).lower() in known else match.group(0)
         if head in "AI":
             pair = tail[:2]
             if pair[0] in _VOWELS or pair[1] in _VOWELS or pair in _ONSETS:
                 return match.group(0)
         return head + tail
 
-    return _SMALL_CAPS_SPLIT.sub(replace, text or "")
+    # Stray last letters first, so "AC T TRAJECTORY" becomes "ACT TRAJECTORY", not "AC TTRAJECTORY".
+    return _SMALL_CAPS_SPLIT.sub(replace, _STRAY_LAST_LETTER.sub(rejoin_last, text))
 
 
 _MARKDOWN_LABEL = re.compile(r"([\\`*_~#|<>$:])")
