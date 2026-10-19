@@ -59,7 +59,7 @@ Community Cloud runs `app/streamlit_app.py` straight from the GitHub repository,
 
 - **Sleeping.** Free apps go to sleep after about 12 hours without visitors and wake when someone clicks *Yes, get this app back up*. Waking restarts the app, so the first load ingests the papers again (2-4 minutes). Open the link yourself a few minutes before showing it to someone.
 - **Storage is temporary.** The index is written to `storage/` in the app folder, or to the system temp folder if the app folder is read-only; the FastEmbed model cache is in the temp folder. Both disappear on a restart and are rebuilt by `AUTO_INGEST_SAMPLES`.
-- **Configuration files** are read from the repository: `requirements.txt` (pinned to the versions that were tested) and `.streamlit/config.toml` (minimal toolbar, 20 MB upload limit). With `ALLOW_INGEST=false` the upload box is hidden anyway.
+- **Configuration files** are read from the repository: `requirements.txt` (pinned to the versions that were tested) and `.streamlit/config.toml` (minimal toolbar, 20 MB upload limit). Visual styling is in `app/styles.css`.
 - **Streamlit's own chrome.** `app/styles.css` hides everything inside the app that can go without breaking it (the decoration bar, main menu, running indicator and deploy button; the toolbar itself stays because it holds the button that opens the sidebar on a phone), and `.streamlit/config.toml` sets the minimal toolbar. What Community Cloud draws around the app is outside the app's page, so CSS can't reach it: the hosting badge and the creator's avatar in the bottom-right corner, and the *Manage app* button, which only the owner sees. Sharing the link with `?embed=true` drops Community Cloud's surroundings (untested here).
 - **Local runs** can use the same secrets: copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` (git-ignored) and run `streamlit run app/streamlit_app.py`.
 
@@ -79,7 +79,7 @@ The cause of the 3.2 GB was ONNX Runtime: embedding in batches of 64 peaked near
 
 ### Private uploads (`ALLOW_SESSION_UPLOADS`)
 
-With `ALLOW_SESSION_UPLOADS = "true"` (and `ALLOW_INGEST = "false"`), the sidebar gets a *Your documents* section where each visitor can add up to 2 files: PDF, TXT or MD, at most 5 MB and 50 pages each (and 400,000 characters of text). No URL ingestion in this mode. The files are searched together with the shared papers, in every retrieval mode, but only in that browser session:
+With `ALLOW_SESSION_UPLOADS = "true"` (and `ALLOW_INGEST = "false"`), the message box gets an attach button (+) for up to 2 files per visitor: PDF, TXT or MD, at most 5 MB and 50 pages each (and 400,000 characters of text). An attached file shows as a small chip by the message box (click ✕ to remove it) and under *Your documents* in the sidebar, and stays searchable for every later question in that session. No URL ingestion in this mode. The files are searched together with the shared papers, in every retrieval mode, but only in that browser session:
 
 - Each session's files live in a small in-memory index of their own (chunks, vectors and a BM25 index over the shared papers plus that session's files). The shared ChromaDB index is never written, so it stays read-only and nothing is left on disk.
 - A session can only reach the shared index and its own, so one visitor can never retrieve another's files, and one visitor's files don't change another's keyword scores. A session without uploads searches exactly as before.
@@ -101,7 +101,7 @@ When the quota (or a per-minute limit) is used up, visitors see a friendly "the 
 | --- | --- |
 | The page says *This host's SQLite is ... but ChromaDB needs 3.35 or newer* | The host's system SQLite is old. Add the line `pysqlite3-binary` to `requirements.txt` (Linux wheels exist for Python 3.12 and 3.13), push, and the app switches to it automatically. |
 | Upload, URL and delete controls are visible | `ALLOW_INGEST` is missing, misspelled, or sits under a `[section]` in the secrets. |
-| No *Your documents* section | `ALLOW_SESSION_UPLOADS` isn't `"true"`, or `ALLOW_INGEST` isn't `"false"` (with shared uploads on, the private ones are hidden). |
+| No attach button (+) in the message box | `ALLOW_SESSION_UPLOADS` isn't `"true"`, or `ALLOW_INGEST` isn't `"false"` (with shared uploads on, the private ones are hidden). |
 | "No documents yet" after a restart | `AUTO_INGEST_SAMPLES` is missing or not `"true"`. A failed paper download is retried on the next page load. |
 | The install fails on a dependency | Check that the Python version in *Advanced settings* is 3.12. |
 | "Free-tier limit" message right after deploying | The Groq key is rate-limited or exhausted; check the app log for the provider's message. |
@@ -165,7 +165,7 @@ Mount a volume at `/app/storage` to keep the index across restarts.
 
 - [ ] The sidebar lists the five papers with clean titles (or `/health` on the API shows a non-zero chunk count), and the heading reads "Ask questions about five landmark AI papers"
 - [ ] One example question returns an answer with citations
-- [ ] `ALLOW_INGEST=false` on public deployments: the sidebar says "This demo uses a fixed set of documents" (or, with private uploads on, "Shared with every visitor and read-only"), and the shared papers have no ✕ buttons or URL box
-- [ ] The sidebar shows "N of N questions left" with a thin bar if `DEMO_MAX_QUESTIONS` is set
-- [ ] With `ALLOW_SESSION_UPLOADS = "true"`: a small PDF added under *Your documents* can be asked about, a second browser (or a private window) doesn't see it, and *Remove* deletes it
+- [ ] `ALLOW_INGEST=false` on public deployments: under *Library* the sidebar says "Shared with every visitor · read-only" and there is no *Manage library* section
+- [ ] "N questions left" shows under the message box if `DEMO_MAX_QUESTIONS` is set
+- [ ] With `ALLOW_SESSION_UPLOADS = "true"`: a small PDF attached with the + button can be asked about, a second browser (or a private window) doesn't see it, and its chip's ✕ removes it
 - [ ] The API key is set as a *secret* (Community Cloud's Secrets box or a Hugging Face *Secret*), never in a file, and `.env` is not committed

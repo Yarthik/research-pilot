@@ -4,10 +4,12 @@
 
 Runs the agent in-process by default. Set API_URL (e.g. http://api:8000) to use the FastAPI
 service instead, which is how docker compose wires the two containers together.
+Components and styling are in app/ui.py and app/styles.css; text helpers in app/render.py.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import threading
@@ -24,19 +26,22 @@ import ui  # noqa: E402
 from backend import get_backend  # noqa: E402
 from render import (  # noqa: E402
     GITHUB_URL,
-    answer_footer,
     answer_html,
     describe_step,
+    how_it_works,
     model_label,
+    next_activity,
     plural,
     rate_limit_notice,
+    short_name,
     short_title,
+    steps_summary,
 )
+from render import questions_left as questions_left_text  # noqa: E402
 from runtime_env import ensure_modern_sqlite, load_streamlit_secrets  # noqa: E402
 
 load_streamlit_secrets(st.secrets)  # hosted apps keep settings in secrets; this also covers TOML booleans
 
-from researchpilot import __version__  # noqa: E402
 from researchpilot.cli import read_sources_file  # noqa: E402
 from researchpilot.config import get_settings  # noqa: E402
 from researchpilot.ingestion.loaders import title_case_if_all_caps  # noqa: E402
@@ -46,7 +51,6 @@ from researchpilot.retrieval.session import MAX_FILE_MB, MAX_FILES, MAX_PDF_PAGE
 SAMPLE_FILE = ROOT / "data" / "sample_sources.txt"
 ICON = ":material/travel_explore:"
 USER_AVATAR = ":material/person:"
-EVAL_URL = f"{GITHUB_URL}#evaluation"
 # One per kind of behaviour, from the eval set (evals/dataset.jsonl: l1 shortened, m2, re3, u2).
 EXAMPLES = [
     ("One paper", "How does LoRA reduce the number of trainable parameters?"),
@@ -69,21 +73,13 @@ MODE_HELP = {
     "bm25": "exact word matches; good for names and numbers",
     "vector": "matches meaning, even when the wording differs",
 }
-STEP_ICONS = {
-    "plan": ":material/checklist:",
-    "retrieve": ":material/search:",
-    "grade": ":material/fact_check:",
-    "generate": ":material/edit_note:",
-}
 SUBTITLE = (
     "Ask a question. The agent searches, checks its evidence, searches again if needed, and answers with citations."
 )
-DEMO_PLACEHOLDER = "Ask about Transformers, RAG, LoRA, ReAct or chain-of-thought…"
-GENERIC_PLACEHOLDER = "Ask a question about your documents…"
-PRIVATE_NOTE = (
-    "Private to this browser tab and temporary: removed when you click Remove, reload the page, "
-    "or after an hour without activity."
-)
+PLACEHOLDER = "Ask a question…"
+LIMIT_PLACEHOLDER = "Demo limit reached"
+FAILURE_MESSAGE = "Something went wrong while answering, so this question wasn't counted. Please try again in a moment."
+log = logging.getLogger("researchpilot.app")
 
 st.set_page_config(page_title="ResearchPilot", page_icon=ICON, layout="centered")
 ui.inject_styles()
@@ -105,28 +101,57 @@ def display_title(title: str, limit: int = 90) -> str:
     return short_title(title_case_if_all_caps(title or ""), limit)
 
 
-def render_steps(trace: list[dict], prefix: str) -> None:
-    with st.container(key=f"rp-steps-{prefix}"), st.expander(f"Agent steps ({len(trace)})"):
-        for step in trace:
-            st.markdown(f"{STEP_ICONS.get(step.get('step'), '•')} {describe_step(step)}")
+def doc_entry(title: str, url: str | None = None) -> tuple[str, str, str | None]:
+    """(short name, full title, URL) for a sidebar list."""
+    full = display_title(title, 200)
+    return short_name(full), full, url
 
 
-def render_result(result: dict, show_steps: bool, prefix: str) -> None:
-    """An answer: agent steps, the answer with citation chips, source cards and a footer line.
+def is_url(source: str) -> bool:
+    return source.startswith(("http://", "https://"))
 
-    `prefix` makes the source cards' anchors unique per message (chips link to them).
+
+def render_result(result: dict, prefix: str) -> None:
+    """An answer: collapsed agent steps, the answer with citation chips, and the sources grid.
+
+    `prefix` makes the source cards' anchors unique per message (citation chips link to them).
     """
-    if show_steps and result.get("trace"):
-        render_steps(result["trace"], prefix)
+    if result.get("trace"):
+        ui.steps_status(result["trace"], steps_summary(result), prefix)
     if result.get("insufficient"):
         covered = "don't fully answer" if result.get("citations") else "don't cover"
         st.info(f"The documents {covered} this question.", icon=":material/info:")
     citations = [dict(c, title=display_title(c.get("title", ""))) for c in result.get("citations", [])]
     st.markdown(answer_html(result["answer"], citations, prefix), unsafe_allow_html=True)
-    ui.source_cards(citations, result["answer"], prefix)
-    st.caption(answer_footer(result))
+    ui.source_grid(citations, result["answer"], prefix)
 
 
+def how_it_works_text(mode: str) -> str:
+    text = how_it_works(MODE_LABELS, MODE_HELP, mode, get_settings().max_retrieval_rounds)
+    if session_uploads:
+        text += (
+            f"\n**Your own files**: attach up to {MAX_FILES} PDF, TXT or MD files ({MAX_FILE_MB} MB and "
+            f"{MAX_PDF_PAGES} pages each) with the + button in the message box. Only this browser tab can "
+            "search them, and they're removed when you remove them, reload the page, or after an hour idle.\n"
+        )
+    return text
+
+
+def attach_files(files) -> None:
+    """Add files from the composer to this session's private index; errors are shown under the composer."""
+    errors = []
+    with st.spinner("Reading and indexing your file…"):
+        for upload in files:
+            try:
+                backend().add_session_file(owner, upload.name, upload.getvalue())
+            except SessionUploadError as exc:  # too big, too long, no text, too many files, at capacity
+                errors.append(str(exc))
+            except Exception as exc:  # unexpected: keep the page working
+                errors.append(f"{upload.name} couldn't be added: {exc}")
+    st.session_state.upload_errors = errors
+
+
+# --------------------------------------------------------------------------- shared library (ALLOW_INGEST=true)
 def show_report(status, report: dict) -> None:
     for item in report["ingested"]:
         status.write(f":material/check: {display_title(item['title'])} ({plural(item['chunks'], 'passage')})")
@@ -141,6 +166,34 @@ def ingest_urls(urls: list[str]) -> None:
         show_report(status, report)
 
 
+def manage_library(sources: list[dict]) -> None:
+    """Upload, add by URL and delete, for a deployment whose shared library is editable."""
+    with st.expander("Manage library", icon=":material/tune:"):
+        for s in sources:
+            left, right = st.columns([6, 1], vertical_alignment="center")
+            left.caption(display_title(s["title"], 60))
+            if right.button("", icon=":material/close:", key=f"del-{s['source']}", help=f"Remove {s['source']}"):
+                backend().delete(s["source"])
+                st.rerun()
+        uploads = st.file_uploader(
+            f"PDF, TXT or Markdown (max {info.get('max_upload_mb', 20)} MB each)",
+            type=["pdf", "txt", "md"],
+            accept_multiple_files=True,
+        )
+        if uploads and st.button("Add uploaded files"):
+            with st.status(f"Adding {plural(len(uploads), 'file')}...", expanded=True) as status:
+                show_report(status, backend().ingest_files([(u.name, u.getvalue()) for u in uploads]))
+            st.rerun()
+        url = st.text_input("Or a URL (web page or PDF)", placeholder="https://arxiv.org/pdf/2005.11401")
+        if url and st.button("Add URL"):
+            ingest_urls([url.strip()])
+            st.rerun()
+        if not sources and SAMPLE_FILE.exists() and st.button("Load 5 sample AI papers", type="primary"):
+            ingest_urls(read_sources_file(str(SAMPLE_FILE)))
+            st.rerun()
+
+
+# --------------------------------------------------------------------------- first start
 @st.cache_resource
 def setup_lock() -> threading.Lock:
     return threading.Lock()  # one session indexes the sample papers; others wait for it
@@ -197,83 +250,6 @@ def prepare_samples() -> None:
     st.rerun()  # ready: draw the page without the setup panel
 
 
-def only_sample_papers(sources: list[dict]) -> bool:
-    samples = set(read_sources_file(str(SAMPLE_FILE))) if SAMPLE_FILE.exists() else set()
-    return bool(sources) and all(s["source"] in samples for s in sources)
-
-
-def session_uploads_panel(owner: str, my_docs: list[dict]) -> None:
-    """The visitor's private files: list with Remove buttons, and an uploader while there is room."""
-    ui.section_label("Your documents")
-    st.caption(f":material/lock: {PRIVATE_NOTE}")
-    with st.container(key="rp-mydocs"):
-        for doc in my_docs:
-            left, right = st.columns([2, 1], vertical_alignment="center")
-            left.markdown(f":material/draft: {display_title(doc['title'], 60)}")
-            if right.button("Remove", key=f"rm-{doc['source']}", help=f"Remove {doc['source']}"):
-                backend().remove_session_file(owner, doc["source"])
-                st.rerun()
-    for kind, text in st.session_state.pop("upload_notes", []):
-        if kind == "ok":
-            st.success(text, icon=":material/check:")
-        else:
-            st.error(text, icon=":material/error:")
-
-    room = MAX_FILES - len(my_docs)
-    if room <= 0:
-        st.caption(f"You've added {MAX_FILES} files, the most for this demo. Remove one to add another.")
-        return
-    # Each limit appears once: size and types in Streamlit's drop zone, count and pages in the caption.
-    st.caption(f"Up to {plural(room, 'more file')}, {MAX_PDF_PAGES} pages each.")
-    uploads = st.file_uploader(
-        "Add your own file",
-        type=["pdf", "txt", "md"],
-        accept_multiple_files=True,
-        max_upload_size=MAX_FILE_MB,
-        key=f"session-upload-{st.session_state.upload_round}",
-    )
-    if not uploads:
-        return
-    notes = []
-    with st.spinner("Reading and indexing your file..."):
-        for upload in uploads[:room]:
-            try:
-                added = backend().add_session_file(owner, upload.name, upload.getvalue())
-                notes.append(("ok", f"Added {display_title(added['title'], 60)} ({plural(added['pages'], 'page')})."))
-            except SessionUploadError as exc:
-                notes.append(("error", str(exc)))
-            except Exception as exc:  # unexpected: keep the page working
-                notes.append(("error", f"{upload.name} couldn't be added: {exc}"))
-    if len(uploads) > room:
-        skipped = ", ".join(u.name for u in uploads[room:])
-        notes.append(("error", f"Only {plural(room, 'more file')} can be added, so {skipped} was skipped."))
-    st.session_state.upload_notes = notes
-    st.session_state.upload_round += 1  # a fresh uploader: clears the widget and frees the uploaded bytes
-    st.rerun()
-
-
-def how_it_works(mode: str, max_rounds: int) -> str:
-    retry = (
-        f"If something is missing, it rewrites the searches and looks again (up to {plural(max_rounds, 'round')})."
-        if max_rounds > 1
-        else "Retrying is switched off, so it answers after one search round."
-    )
-    modes = "\n".join(f"- **{label}**: {MODE_HELP[m]}" for m, label in MODE_LABELS.items())
-    return f"""
-1. **Plan**: splits your question into one to three focused searches.
-2. **Retrieve**: finds the most relevant passages in the documents.
-3. **Grade**: checks whether those passages are enough to answer.
-4. **Retry or answer**: {retry} Then it answers, citing the passages it used, or says the documents don't cover it.
-
-**Search methods** (choose one under Settings in the sidebar):
-
-{modes}
-
-Currently selected: **{MODE_LABELS.get(mode, mode)}**. How well each method works is measured in the
-[evaluation]({EVAL_URL}).
-"""
-
-
 # --------------------------------------------------------------------------- startup
 try:
     info = backend().info()
@@ -289,10 +265,9 @@ except Exception as exc:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "questions_asked" not in st.session_state:
-    st.session_state.questions_asked = 0  # not reset by "Clear chat", so the demo limit holds
+    st.session_state.questions_asked = 0  # not reset by "New chat", so the demo limit holds
 if "owner" not in st.session_state:
     st.session_state.owner = uuid.uuid4().hex  # this browser session's id for its private uploads
-    st.session_state.upload_round = 0
 
 # Optional per-session cap for a public demo (DEMO_MAX_QUESTIONS); None means unlimited.
 settings = get_settings()
@@ -309,156 +284,189 @@ my_docs: list[dict] = []
 if session_uploads:
     backend().touch_session(owner)  # keeps this visitor's uploads alive; removes other idle sessions' uploads
     my_docs = backend().session_documents(owner)
+messages = st.session_state.messages
+landing = not messages
 
 # --------------------------------------------------------------------------- sidebar
 with st.sidebar:
-    st.markdown(f"{ICON} **ResearchPilot**")  # small: the page heading carries the name
-    st.caption("Agentic RAG with verifiable citations")
-
-    ui.section_label("Settings")
-    modes = list(MODE_LABELS)
-    default_mode = info.get("retrieval_mode", "hybrid")
-    mode = st.selectbox(
-        "Search method",
-        modes,
-        format_func=lambda m: MODE_LABELS[m],
-        index=modes.index(default_mode) if default_mode in modes else 0,
-        help="\n\n".join(f"**{MODE_LABELS[m]}**: {MODE_HELP[m]}." for m in modes),
-    )
-    show_steps = st.toggle("Show agent steps", value=True, help="Show how the agent searched for each answer.")
-    if st.session_state.messages and st.button("Clear chat", icon=":material/delete_sweep:"):
+    with st.container(key="rp-brand"):
+        st.markdown(f"{ICON} **ResearchPilot**")
+    # Always present (disabled when empty), so nothing shifts when a chat starts.
+    if st.button("New chat", icon=":material/edit_square:", key="rp-new-chat", width="stretch", disabled=landing):
         st.session_state.messages = []
         st.rerun()
 
-    if question_limit is not None:
-        ui.question_meter(questions_left, question_limit)
+    mode_keys = list(MODE_LABELS)
+    default_mode = info.get("retrieval_mode", "hybrid")
+    mode = st.selectbox(
+        "Search method",
+        mode_keys,
+        format_func=lambda m: MODE_LABELS[m],
+        index=mode_keys.index(default_mode) if default_mode in mode_keys else 0,
+        help="\n\n".join(f"**{MODE_LABELS[m]}**: {MODE_HELP[m]}." for m in mode_keys),
+    )
 
-    st.divider()
-    ui.section_label(f"Documents · {len(sources)}")
-    if session_uploads:
-        st.caption("Shared with every visitor and read-only.")
-    links = []
-    for s in sources:
-        title = display_title(s["title"])
-        links.append(f"[{title}]({s['source']})" if s["source"].startswith(("http://", "https://")) else title)
+    ui.section_label("Library")
+    library = [doc_entry(s["title"], s["source"] if is_url(s["source"]) else None) for s in sources]
+    ui.doc_list(library, key="rp-library")
     if can_edit:
-        for s, link in zip(sources, links, strict=True):
-            left, right = st.columns([6, 1], vertical_alignment="center")
-            left.markdown(link)
-            if right.button("", icon=":material/close:", key=f"del-{s['source']}", help=f"Remove {s['source']}"):
-                backend().delete(s["source"])
-                st.rerun()
-    elif links:
-        with st.container(key="rp-docs"):
-            st.markdown("\n".join(f"- {link}" for link in links))
+        manage_library(sources)
+    elif sources:
+        st.caption("Shared with every visitor · read-only")
 
-    if can_edit:
-        ui.section_label("Add documents")
-        uploads = st.file_uploader(
-            f"PDF, TXT or Markdown (max {info.get('max_upload_mb', 20)} MB each)",
-            type=["pdf", "txt", "md"],
-            accept_multiple_files=True,
-        )
-        if uploads and st.button("Add uploaded files"):
-            with st.status(f"Adding {plural(len(uploads), 'file')}...", expanded=True) as status:
-                show_report(status, backend().ingest_files([(u.name, u.getvalue()) for u in uploads]))
-            st.rerun()
-        url = st.text_input("Or a URL (web page or PDF)", placeholder="https://arxiv.org/pdf/2005.11401")
-        if url and st.button("Add URL"):
-            ingest_urls([url.strip()])
-            st.rerun()
-        if not sources and SAMPLE_FILE.exists() and st.button("Load 5 sample AI papers", type="primary"):
-            ingest_urls(read_sources_file(str(SAMPLE_FILE)))
-            st.rerun()
-    elif session_uploads:
-        session_uploads_panel(owner, my_docs)
-    else:
-        st.info("This demo uses a fixed set of documents.", icon=":material/lock:")
+    if my_docs:
+        ui.section_label("Your documents")
+        ui.doc_list([doc_entry(d["title"]) for d in my_docs], key="rp-mydocs")
+        st.caption(":material/lock: Private to this tab · removed after an hour idle")
 
-    st.divider()
-    st.caption(f"Built by Kartik Kaushik · [GitHub]({GITHUB_URL})")
-    st.caption(f"{model_label(info['llm_provider'], info['llm_model'])} · v{__version__}")
+    st.caption(
+        f"Built by Kartik Kaushik · [GitHub]({GITHUB_URL})  \n{model_label(info['llm_provider'], info['llm_model'])}"
+    )
 
 # --------------------------------------------------------------------------- chat
-with st.container(key="rp-hero"):
-    st.title("ResearchPilot", anchor=False)
-    st.markdown(SUBTITLE)
-    with st.container(key="rp-how"), st.expander("How it works"):
-        st.markdown(how_it_works(mode, settings.max_retrieval_rounds))
-
-for index, message in enumerate(st.session_state.messages):
-    with st.chat_message(message["role"], avatar=USER_AVATAR if message["role"] == "user" else ICON):
-        if message["role"] == "user":
-            st.markdown(message["content"])
-        elif "notice" in message:  # the question couldn't be answered (e.g. the LLM quota is used up)
-            st.warning(message["notice"], icon=":material/hourglass_top:")
-        else:
-            render_result(message["result"], show_steps, prefix=f"m{index}")
-
-# Before the first question the input sits under the intro, so the page opens at the top; a pinned
-# input makes Streamlit scroll to the bottom, which hides the heading on a phone. Once the chat has
-# started, the input is pinned to the bottom as usual.
-landing = not st.session_state.messages
-input_area = st.container() if landing else st
-# The sample papers' topics in the read-only demo; a generic prompt once the visitor's own files are in play.
-demo_corpus = not can_edit and not my_docs and only_sample_papers(sources)
 has_documents = bool(sources or my_docs)
-question = input_area.chat_input(
-    DEMO_PLACEHOLDER if demo_corpus else GENERIC_PLACEHOLDER, disabled=not has_documents or limit_reached
+left_text = None if questions_left is None else questions_left_text(questions_left)
+composer_options = (
+    {"accept_file": "multiple", "file_type": ["pdf", "txt", "md"], "max_upload_size": MAX_FILE_MB}
+    if session_uploads
+    else {}
 )
-if not has_documents:
-    st.info("No documents yet. Add some from the sidebar to start.")
-elif limit_reached:
-    st.info(
-        f"Thanks for trying ResearchPilot! This public demo allows {question_limit} "
-        f"question{'' if question_limit == 1 else 's'} per session "
-        f"to keep it free for everyone. To keep exploring, run it yourself from the [GitHub repository]({GITHUB_URL}).",
-        icon=":material/favorite:",
-    )
-elif not st.session_state.messages and not question:
-    examples = st.empty()  # cleared once a question is asked, so the cards don't linger above the chat
-    with examples.container():
-        ui.section_label("Or try one of these", sidebar_style=False)
-        question = ui.example_cards(EXAMPLES)
-    if question:
-        examples.empty()
 
+
+def composer(area):
+    """The chat input; with private uploads on, its attach button adds files to this session's index."""
+    return area.chat_input(
+        LIMIT_PLACEHOLDER if limit_reached else PLACEHOLDER,
+        key="composer",
+        disabled=not has_documents or limit_reached,
+        **composer_options,
+    )
+
+
+def upload_errors() -> None:
+    for text in st.session_state.pop("upload_errors", []):
+        st.error(text, icon=":material/error:")
+
+
+def status_notices() -> None:
+    if not has_documents:
+        st.info("No documents yet. Add some from the sidebar to start.")
+    elif limit_reached:
+        st.info(
+            f"Thanks for trying ResearchPilot! This public demo allows {question_limit} "
+            f"question{'' if question_limit == 1 else 's'} per session "
+            "to keep it free for everyone. To keep exploring, run it yourself from the "
+            f"[GitHub repository]({GITHUB_URL}).",
+            icon=":material/favorite:",
+        )
+
+
+clicked_example = None
+if landing:
+    # One vertically centred group; the stylesheet centres it while .st-key-rp-empty is on the page.
+    with st.container(key="rp-empty"):
+        with st.container(key="rp-hero"):
+            st.markdown(ICON)
+            st.title("ResearchPilot", anchor=False)
+            st.markdown(SUBTITLE)
+        # The same order as the pinned composer: attached-file chips, composer, meta line.
+        removed = ui.file_chips(my_docs) if my_docs else None
+        submitted = composer(st.container(key="rp-composer"))
+        how_clicked = ui.composer_meta(left_text, with_how_link=True)
+        upload_errors()
+        status_notices()
+        if has_documents and not limit_reached:
+            clicked_example = ui.suggestions(EXAMPLES)
+else:
+    for index, message in enumerate(messages):
+        with st.chat_message(message["role"], avatar=USER_AVATAR if message["role"] == "user" else ICON):
+            if message["role"] == "user":
+                st.markdown(message["content"])
+            elif "notice" in message:  # the question couldn't be answered (e.g. the LLM quota is used up)
+                st.warning(message["notice"], icon=":material/hourglass_top:")
+            elif "error" in message:  # it failed for another reason (details in the log)
+                st.error(message["error"], icon=":material/error:")
+            else:
+                render_result(message["result"], prefix=f"m{index}")
+    with st.bottom:
+        removed = ui.file_chips(my_docs) if my_docs else None
+    submitted = composer(st)  # pinned to the bottom
+    with st.bottom:
+        how_clicked = ui.composer_meta(left_text, with_how_link=False)
+        upload_errors()
+    if "pending" not in st.session_state:  # not above an answer that's still being written
+        status_notices()
+
+if how_clicked:
+    ui.how_it_works_dialog(how_it_works_text(mode))
+if removed:
+    backend().remove_session_file(owner, removed)
+    st.rerun()
+
+# What was submitted: text from the composer or a suggestion, and any attached files.
+if isinstance(submitted, str):
+    question, files = submitted.strip() or None, []
+elif submitted:
+    question, files = (submitted.text or "").strip() or None, list(submitted.files or [])
+else:
+    question, files = None, []
+question = question or clicked_example
+if files:
+    attach_files(files)
+    if not question:
+        st.rerun()  # show the new chips
 if question and not limit_reached:
+    # Show the question and a live status at once in the chat layout, then answer on that run.
     st.session_state.questions_asked += 1
-    st.session_state.messages.append({"role": "user", "content": question})
-    with st.chat_message("user", avatar=USER_AVATAR):
-        st.markdown(question)
+    messages.append({"role": "user", "content": question})
+    st.session_state.pending = question
+    st.rerun()
+
+pending = st.session_state.pop("pending", None)
+if pending:
     with st.chat_message("assistant", avatar=ICON):
-        result, notice = None, None
-        progress = st.empty()  # live steps while the agent works; replaced by the answer when it's done
-        try:
-            with progress.container(), st.status("Researching…", expanded=True) as status:
-                status.write(":material/hourglass_top: Planning the searches…")  # shown at once, before any step
-                try:
-                    for event in backend().ask_stream(question, mode=mode, owner=owner if session_uploads else None):
-                        if event["type"] == "step":
-                            status.write(f"{STEP_ICONS.get(event['step'], '•')} {describe_step(event)}")
-                        elif event["type"] == "result":
-                            result = event
-                except LLMRateLimitError as exc:  # the provider's quota is used up: friendly message, not the error
-                    notice = rate_limit_notice(exc.daily)
-                    status.update(label="The LLM's free-tier limit was reached", state="error", expanded=False)
-                else:
-                    status.update(label="Done", state="complete", expanded=False)
-        except LLMConfigError as exc:
-            st.error(f"The LLM isn't configured: {exc}. Set LLM_PROVIDER, LLM_MODEL and the API key in `.env`.")
-        except Exception as exc:
-            st.error(f"Something went wrong: {exc}")
+        result, notice, failure = None, None, None
+        progress = st.empty()  # the live steps; replaced by the finished answer (with its collapsed steps)
+        with (
+            progress.container(),
+            st.container(key="rp-steps-live"),
+            st.status("Searching the documents…", expanded=True) as status,
+        ):
+            done = st.container()  # finished steps, in order
+            doing = st.empty()  # what the agent is doing now; replaced when each step finishes
+            doing.markdown(":material/hourglass_top: Planning the searches…")  # shown at once
+            try:
+                for event in backend().ask_stream(pending, mode=mode, owner=owner if session_uploads else None):
+                    if event["type"] == "step":
+                        done.markdown(f"{ui.STEP_ICONS.get(event['step'], '•')} {describe_step(event)}")
+                        activity = next_activity(event)
+                        if activity:
+                            doing.markdown(f":material/hourglass_top: {activity}")
+                        else:
+                            doing.empty()
+                    elif event["type"] == "result":
+                        result = event
+            except LLMRateLimitError as exc:  # the provider's quota is used up: friendly message, not the error
+                notice = rate_limit_notice(exc.daily)
+            except LLMConfigError as exc:  # for whoever runs the app, so it names the settings
+                failure = f"The LLM isn't configured: {exc}. Set LLM_PROVIDER, LLM_MODEL and the API key in `.env`."
+            except Exception:  # anything else: a friendly message; the details go to the log, not the page
+                log.exception("answering %r failed", pending)
+                failure = FAILURE_MESSAGE
+            doing.empty()
+            if result:
+                status.update(label="Done", state="complete", expanded=False)
+            else:
+                stopped = "The LLM's free-tier limit was reached" if notice else "Stopped"
+                status.update(label=stopped, state="error", expanded=False)
         if result:
             progress.empty()
-            render_result(result, show_steps, prefix=f"m{len(st.session_state.messages)}")
-            st.session_state.messages.append({"role": "assistant", "result": result})
+            render_result(result, prefix=f"m{len(messages)}")
+            messages.append({"role": "assistant", "result": result})
+            st.rerun()  # update the questions-left line, and disable the composer once the limit is hit
+        st.session_state.questions_asked -= 1  # only answered questions count towards the demo limit
+        if notice:
+            messages.append({"role": "assistant", "notice": notice})
         else:
-            st.session_state.questions_asked -= 1  # only answered questions count towards the demo limit
-            if notice:
-                st.warning(notice, icon=":material/hourglass_top:")
-                st.session_state.messages.append({"role": "assistant", "notice": notice})
-        if result and (question_limit is not None or landing):
-            # Update the questions-left count and disable the input once the limit is hit; after the
-            # first question, also move the input from under the intro to the bottom of the page.
-            st.rerun()
+            messages.append({"role": "assistant", "error": failure or FAILURE_MESSAGE})
+        st.rerun()  # show it from the history, with the refunded question in the count

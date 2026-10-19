@@ -1,159 +1,280 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
-/* ResearchPilot's look, loaded by app/ui.py. See ui.py for how colours stay readable in both themes.
-   --rp-primary must match primaryColor in .streamlit/config.toml. */
-:root { --rp-primary: #2F6FE4; --rp-width: 820px; }
-.stApp {
+/* ResearchPilot's look, loaded by app/ui.py (see its docstring). Selectors use Streamlit 1.65's
+   data-testid attributes and the st-key-* classes of keyed elements. */
+
+/* =========================================================================== tokens
+   Spacing: 4 8 12 16 24 32 48. Type: 12 (labels, metadata), 13 (snippets, secondary reading),
+   15 (body), 28 (title). Radius: 8, 12. Colours: text, muted, border, tint, accent. */
+:root {
+  --rp-s1: 4px; --rp-s2: 8px; --rp-s3: 12px; --rp-s4: 16px; --rp-s5: 24px; --rp-s6: 32px; --rp-s7: 48px;
+  --rp-fs-meta: 12px; --rp-fs-small: 13px; --rp-fs-body: 15px; --rp-fs-title: 28px;
+  --rp-radius-sm: 8px; --rp-radius: 12px;
+  --rp-accent: #2F6FE4;            /* = primaryColor in .streamlit/config.toml */
+  --rp-width: 760px;               /* the reading column */
+  --rp-empty-width: 640px;         /* the empty state's group */
+  --rp-tooltip-width: 320px;       /* help tooltips: narrow enough not to cover the reading column */
+}
+:root {
+  /* Derived from the current text colour, so one rule works in light and dark (see ui.py). On :root, not
+     .stApp, so dialogs (rendered outside .stApp) get them too; currentColor resolves where each is used. */
   --rp-muted: color-mix(in srgb, currentColor 72%, transparent);
-  --rp-border: color-mix(in srgb, currentColor 14%, transparent);
-  --rp-border-strong: color-mix(in srgb, currentColor 28%, transparent);
-  --rp-tint: color-mix(in srgb, currentColor 3.5%, transparent);
-  --rp-accent-text: color-mix(in srgb, var(--rp-primary) 65%, currentColor);
-  --rp-accent-tint: color-mix(in srgb, var(--rp-primary) 10%, transparent);
+  --rp-border: color-mix(in srgb, currentColor 12%, transparent);
+  --rp-border-strong: color-mix(in srgb, currentColor 22%, transparent);
+  --rp-tint: color-mix(in srgb, currentColor 4%, transparent);
+  --rp-tint-strong: color-mix(in srgb, currentColor 7%, transparent);
+  --rp-accent-text: color-mix(in srgb, var(--rp-accent) 65%, currentColor);
+  --rp-accent-tint: color-mix(in srgb, var(--rp-accent) 12%, transparent);
+  --rp-ring: 0 0 0 3px color-mix(in srgb, var(--rp-accent) 25%, transparent);
 }
 
-/* ---- Streamlit chrome: everything that can go without breaking the app ---- */
-/* Not stToolbar itself: it holds the button that opens the sidebar on a phone. */
+/* =========================================================================== Streamlit chrome
+   Hidden: everything that can go without breaking the app. Not stToolbar itself: it holds the
+   button that opens the sidebar on a phone. */
 [data-testid="stDecoration"], [data-testid="stStatusWidget"], [data-testid="stMainMenu"], #MainMenu,
 [data-testid="stAppDeployButton"], [data-testid="stToolbarActions"], footer { display: none !important; }
-[data-testid="stToolbar"] { background: transparent; }
-header[data-testid="stHeader"] { background: transparent; height: 2.5rem; }
+header[data-testid="stHeader"], [data-testid="stToolbar"] { background: transparent; }
+header[data-testid="stHeader"] { height: 2.5rem; }
 
-/* ---- One centred reading column for the hero, messages and the chat input ---- */
-[data-testid="stMainBlockContainer"] { max-width: var(--rp-width); padding: 2.75rem 1.5rem 2rem; }
-[data-testid="stBottomBlockContainer"] { max-width: var(--rp-width); padding-left: 1.5rem; padding-right: 1.5rem; }
-[data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"] { gap: 0.75rem; }
-@media (max-width: 640px) {
-  [data-testid="stMainBlockContainer"] { padding: 3rem 1rem 1.5rem; }
-  [data-testid="stBottomBlockContainer"] { padding-left: 1rem; padding-right: 1rem; }
-}
-
-/* ---- Type ---- */
-/* Set on the container only: a child using color-mix(currentColor) would be muted twice. */
-[data-testid="stCaptionContainer"] { color: var(--rp-muted); }
-[data-testid="stCaptionContainer"] p { color: inherit; }
+/* =========================================================================== base
+   Note: color-mix(currentColor) is set on one element and inherited, never on a parent and its child,
+   or the colour would be muted twice. */
 .stApp a:focus-visible, .stApp button:focus-visible, .stApp summary:focus-visible,
-.stApp [role="button"]:focus-visible { outline: 2px solid var(--rp-primary) !important; outline-offset: 2px; }
+.stApp [role="button"]:focus-visible {
+  outline: 2px solid var(--rp-accent) !important; outline-offset: 2px;
+}
+[data-testid="stCaptionContainer"] { color: var(--rp-muted); font-size: var(--rp-fs-meta); }
+[data-testid="stCaptionContainer"] p { color: inherit; font-size: inherit; }
+/* Streamlit gives the last element of a Markdown block a negative bottom margin; cancel it for ours. */
+[data-testid="stMarkdownContainer"]:has(> .rp-label), [data-testid="stMarkdownContainer"]:has(> .rp-docs),
+[data-testid="stMarkdownContainer"]:has(> .rp-dialog-title) {
+  margin-bottom: 0 !important;
+}
+.rp-label {
+  font-size: var(--rp-fs-meta); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--rp-muted);
+}
+.rp-meta { color: var(--rp-muted); font-weight: 400; }
 
-/* ---- Landing hero ---- */
-.st-key-rp-hero { gap: 0.5rem !important; }
-.st-key-rp-hero h1 { padding: 0; line-height: 1.2; letter-spacing: -0.02em; }
-.st-key-rp-hero [data-testid="stHeading"] { margin-bottom: 0.35rem; }
-.st-key-rp-hero [data-testid="stMarkdownContainer"] p { color: var(--rp-muted); font-size: 1.0625rem; line-height: 1.55; }
-.st-key-rp-how [data-testid="stExpander"] details,
-.st-key-rp-how [data-testid="stExpander"] details:hover { border: 0; background: transparent; }
-.st-key-rp-how summary { padding: 0.15rem 0; width: fit-content; }
-.st-key-rp-how summary p, .st-key-rp-how summary [data-testid="stIconMaterial"] {
-  font-size: 0.875rem !important; font-weight: 500; color: var(--rp-accent-text) !important;
+/* =========================================================================== layout
+   One reading column for messages and the pinned composer; full width on phones. */
+[data-testid="stMainBlockContainer"] { max-width: var(--rp-width); padding: var(--rp-s7) var(--rp-s5) var(--rp-s5); }
+[data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"] { gap: var(--rp-s3); }
+[data-testid="stBottomBlockContainer"] {
+  max-width: var(--rp-width); padding: var(--rp-s2) var(--rp-s5) var(--rp-s4);
 }
-.st-key-rp-how [data-testid="stExpanderDetails"] {
-  border-left: 2px solid var(--rp-border); padding: 0.25rem 0 0.25rem 1rem; margin-left: 0.4rem; font-size: 0.925rem;
-}
-.rp-section-label { font-size: 0.8125rem; font-weight: 600; color: var(--rp-muted); margin: 0.5rem 0 0.4rem; }
-
-/* ---- Example questions: a 2x2 grid of left-aligned suggestion cards ---- */
-.st-key-rp-examples button {
-  width: 100%; min-height: 4.75rem; justify-content: flex-start; align-items: flex-start; text-align: left;
-  padding: 0.7rem 0.9rem; border: 1px solid var(--rp-border); border-radius: 0.75rem; background: var(--rp-tint);
-  color: inherit; transition: border-color 0.15s ease, background-color 0.15s ease;
-}
-.st-key-rp-examples button:hover, .st-key-rp-examples button:focus-visible {
-  border-color: var(--rp-primary); background: var(--rp-accent-tint); color: inherit;
-}
-.st-key-rp-examples button:active { background: color-mix(in srgb, var(--rp-primary) 16%, transparent); color: inherit; }
-.st-key-rp-examples button > div, .st-key-rp-examples button span { justify-content: flex-start; text-align: left; width: 100%; }
-.st-key-rp-examples button p { text-align: left; font-size: 0.9375rem; font-weight: 400; line-height: 1.4; margin: 0; }
-.st-key-rp-examples button br { display: none; }
-.st-key-rp-examples .stMarkdownColoredText {
-  display: block; margin-bottom: 0.2rem; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.01em;
-  color: var(--rp-muted) !important;
+[data-testid="stBottomBlockContainer"] [data-testid="stVerticalBlock"] { gap: var(--rp-s2); }
+@media (max-width: 640px) {
+  [data-testid="stMainBlockContainer"] { padding: var(--rp-s7) var(--rp-s4) var(--rp-s4); }
+  [data-testid="stBottomBlockContainer"] { padding: var(--rp-s2) var(--rp-s4) var(--rp-s3); }
 }
 
-/* ---- Messages ---- */
-[data-testid="stChatMessage"] { padding: 0.5rem 0; gap: 0.75rem; background: transparent; }
-[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
-  background: var(--rp-tint); border-radius: 0.75rem; padding: 0.6rem 0.75rem;
+/* =========================================================================== empty state
+   One group, centred vertically while it is on the page. */
+[data-testid="stMainBlockContainer"]:has(.st-key-rp-empty),
+[data-testid="stMainBlockContainer"]:has(.st-key-rp-setup) {
+  min-height: 100dvh; display: flex; flex-direction: column; justify-content: center;
+  padding-top: var(--rp-s7); padding-bottom: var(--rp-s6);
 }
-[class*="st-key-rp-steps"] [data-testid="stExpander"] details { border: 0; background: transparent; }
-[class*="st-key-rp-steps"] summary { padding: 0.1rem 0; width: fit-content; }
-[class*="st-key-rp-steps"] summary p { font-size: 0.8125rem; color: var(--rp-muted); }
-[class*="st-key-rp-steps"] [data-testid="stExpanderDetails"] { border-left: 2px solid var(--rp-border); padding: 0 0 0 0.9rem; margin-left: 0.4rem; }
-[class*="st-key-rp-steps"] [data-testid="stExpanderDetails"] p { font-size: 0.8125rem; color: var(--rp-muted); }
+/* The block inside the column stretches to full height (flex: 1), so it centres its content too. */
+[data-testid="stMainBlockContainer"]:has(.st-key-rp-empty) > [data-testid="stVerticalBlock"],
+[data-testid="stMainBlockContainer"]:has(.st-key-rp-setup) > [data-testid="stVerticalBlock"] { justify-content: center; }
+.st-key-rp-empty { width: 100%; max-width: var(--rp-empty-width); margin: 0 auto; gap: var(--rp-s4) !important; }
+.st-key-rp-hero { gap: 0 !important; margin-bottom: var(--rp-s3); }
+.st-key-rp-hero [data-testid="stElementContainer"] { width: 100%; }
+/* Streamlit pulls each Markdown block up by -16px to cancel a paragraph margin; the hero's paragraphs have none. */
+.st-key-rp-hero [data-testid="stMarkdownContainer"] { margin-bottom: 0 !important; }
+.st-key-rp-hero h1, .st-key-rp-hero p { text-align: center; }
+/* Material icons written in Markdown render as span[role="img"]. */
+.st-key-rp-hero span[role="img"] { font-size: 34px; line-height: 1; color: var(--rp-accent); display: inline-block; margin-bottom: var(--rp-s2); }
+.st-key-rp-hero h1 {
+  font-size: var(--rp-fs-title); line-height: 1.2; letter-spacing: -0.02em; padding: 0 0 var(--rp-s3); margin: 0;
+}
+.st-key-rp-hero p { margin: 0 auto; max-width: 30rem; }
+.st-key-rp-hero [data-testid="stMarkdown"]:last-child p { color: var(--rp-muted); font-size: var(--rp-fs-body); line-height: 1.55; }
 
-/* Citation chips; the hidden brackets keep "[1]" when the answer is copied */
+/* Suggestions: compact rows, a small label above the question, hairlines between. */
+.st-key-rp-suggest { gap: 0 !important; margin-top: var(--rp-s2); }
+.st-key-rp-suggest button {
+  justify-content: flex-start; text-align: left; min-height: 0; padding: var(--rp-s3) var(--rp-s3);
+  border: 0; border-radius: var(--rp-radius-sm); background: transparent; color: inherit;
+}
+.st-key-rp-suggest [data-testid="stElementContainer"] + [data-testid="stElementContainer"] button {
+  border-top: 1px solid var(--rp-border); border-radius: 0;
+}
+.st-key-rp-suggest button:hover, .st-key-rp-suggest button:focus-visible {
+  background: var(--rp-tint-strong); color: inherit; border-radius: var(--rp-radius-sm); border-top-color: transparent;
+}
+.st-key-rp-suggest button:active { background: var(--rp-accent-tint); color: inherit; }
+.st-key-rp-suggest button > div, .st-key-rp-suggest button span { justify-content: flex-start; text-align: left; width: 100%; }
+.st-key-rp-suggest button p { text-align: left; font-size: var(--rp-fs-body); font-weight: 400; line-height: 1.4; margin: 0; }
+.st-key-rp-suggest button br { display: none; }
+.st-key-rp-suggest .stMarkdownColoredText {
+  display: block; margin-bottom: 2px; font-size: var(--rp-fs-meta); font-weight: 500; color: var(--rp-muted) !important;
+}
+
+/* =========================================================================== composer */
+[data-testid="stChatInput"] {
+  border: 1px solid var(--rp-border-strong); border-radius: var(--rp-radius); background: var(--rp-tint);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+[data-testid="stChatInput"]:focus-within { border-color: var(--rp-accent); box-shadow: var(--rp-ring); }
+/* Disabled (no questions left): visibly unavailable rather than an input that ignores you. */
+[data-testid="stChatInput"]:has(textarea:disabled) { border-style: dashed; border-color: var(--rp-border-strong); background: transparent; }
+[data-testid="stChatInput"] > div { background: transparent; border: 0; }
+[data-testid="stChatInputTextArea"] { font-size: var(--rp-fs-body); }
+/* The composer shows focus with its own ring, so the text area inside needs no second outline. */
+[data-testid="stChatInputTextArea"]:focus, [data-testid="stChatInputTextArea"]:focus-visible { outline: none !important; }
+.st-key-rp-meta { min-height: 0; margin-top: calc(-1 * var(--rp-s2)); padding: 0 var(--rp-s1); align-items: baseline !important; }
+/* One line height for the link (the button sets its own, 1.6) and the count, so their baselines match. */
+.st-key-rp-meta button, .st-key-rp-meta button *, .st-key-rp-meta [data-testid="stCaptionContainer"] p { line-height: 1.5 !important; }
+.st-key-rp-meta button { min-height: 0; padding: 0; font-size: var(--rp-fs-meta); color: var(--rp-accent-text); }
+.st-key-rp-meta button p { font-size: var(--rp-fs-meta); font-weight: 500; }
+.st-key-rp-meta button:hover { color: var(--rp-accent-text); text-decoration: underline; }
+.st-key-rp-meta [data-testid="stElementContainer"] { width: auto !important; flex: 0 0 auto; }
+.st-key-rp-meta [data-testid="stElementContainer"]:has([data-testid="stCaptionContainer"]) { margin-left: auto; }
+/* Attached files: small removable chips. */
+.st-key-rp-files { gap: var(--rp-s2) !important; flex-wrap: wrap; }
+.st-key-rp-files button {
+  min-height: 0; padding: 3px var(--rp-s2) 3px var(--rp-s3); border-radius: 999px; border: 1px solid var(--rp-border-strong);
+  background: var(--rp-tint); color: inherit;
+}
+.st-key-rp-files button p { font-size: var(--rp-fs-small); }
+.st-key-rp-files button [data-testid="stIconMaterial"] { font-size: 14px; color: var(--rp-muted); }
+.st-key-rp-files button:hover { border-color: var(--rp-accent); color: inherit; }
+
+/* =========================================================================== messages
+   No avatars; the user's message is a right-aligned bubble, the answer sits at the text edge. */
+[data-testid="stChatMessageAvatarCustom"], [data-testid="stChatMessageAvatarUser"],
+[data-testid="stChatMessageAvatarAssistant"] { display: none; }
+[data-testid="stChatMessage"] { padding: 0; gap: 0; background: transparent; }
+[data-testid="stChatMessage"]:has([aria-label="Chat message from user"]) {
+  width: fit-content; max-width: 85%; margin-left: auto; margin-top: var(--rp-s4);
+  padding: var(--rp-s2) var(--rp-s4); border-radius: 18px; background: var(--rp-tint-strong);
+}
+[data-testid="stChatMessageContent"] p, [data-testid="stChatMessageContent"] li { font-size: var(--rp-fs-body); line-height: 1.65; }
+
+/* Agent steps: one quiet line (live while running), expanding to the steps. */
+[class*="st-key-rp-steps"] [data-testid="stExpander"] details,
+[class*="st-key-rp-steps"] [data-testid="stExpander"] details:hover { border: 0; background: transparent; }
+[class*="st-key-rp-steps"] summary {
+  padding: var(--rp-s1) 0; width: fit-content; background: transparent !important; color: var(--rp-muted);
+}
+[class*="st-key-rp-steps"] summary:hover { color: inherit; }
+[class*="st-key-rp-steps"] summary p { font-size: var(--rp-fs-small); }
+[class*="st-key-rp-steps"] summary [data-testid^="stExpanderIcon"] { font-size: 16px; }
+[class*="st-key-rp-steps"] [data-testid="stExpanderDetails"] {
+  padding: var(--rp-s1) 0 var(--rp-s2) var(--rp-s4); margin-left: 7px; border: 0; border-left: 1px solid var(--rp-border-strong);
+}
+[class*="st-key-rp-steps"] [data-testid="stExpanderDetails"] [data-testid="stVerticalBlock"] { gap: var(--rp-s1); }
+[class*="st-key-rp-steps"] [data-testid="stExpanderDetails"] p { font-size: var(--rp-fs-small); color: var(--rp-muted); line-height: 1.5; }
+
+/* Citation chips; the zero-size brackets keep "[1]" when the answer is copied. */
 .rp-cites { white-space: nowrap; }
-/* Zero-size but inline, so copying and innerText keep "[1]" on the same line as the text. */
 .rp-cite-copy { font-size: 0; line-height: 0; color: transparent; }
 a.rp-cite {
-  display: inline-block; min-width: 1.3rem; padding: 0.05rem 0.32rem; margin: 0 0.08rem; border-radius: 0.4rem;
-  font-size: 0.72rem; font-weight: 600; line-height: 1.3; text-align: center; vertical-align: 0.1em;
-  color: inherit !important; text-decoration: none !important;
-  background: var(--rp-accent-tint); border: 1px solid color-mix(in srgb, var(--rp-primary) 35%, transparent);
+  display: inline-block; min-width: 1.35em; padding: 0 0.35em; margin: 0 1px; border-radius: 6px;
+  font-size: var(--rp-fs-meta); font-weight: 600; line-height: 1.5; text-align: center; vertical-align: 0.1em;
+  color: inherit !important; text-decoration: none !important; background: var(--rp-accent-tint);
 }
-a.rp-cite:hover { background: var(--rp-primary); border-color: var(--rp-primary); color: #fff !important; }
+a.rp-cite:hover { background: var(--rp-accent); color: #fff !important; }
 
-/* Source cards */
-.rp-sources-label { font-size: 0.8125rem; font-weight: 600; color: var(--rp-muted); margin: 0.25rem 0 0.4rem; }
-[class*="st-key-rp-src-"] {
-  gap: 0 !important; padding: 0.7rem 0.9rem 0.3rem; border: 1px solid var(--rp-border); border-radius: 0.75rem;
-  background: var(--rp-tint); transition: border-color 0.2s ease, box-shadow 0.2s ease;
+/* Sources: a two-column grid of compact cards (one column under 640 px, Streamlit's breakpoint). */
+.rp-label + * { margin-top: 0; }
+[class*="st-key-rp-sources-"] { gap: var(--rp-s2) !important; }
+[class*="st-key-rp-sources-"] [data-testid="stHorizontalBlock"] { gap: var(--rp-s2); }
+[class*="st-key-rp-src-"] { gap: 0 !important; height: 100%; }
+[class*="st-key-rp-src-"] [data-testid="stElementContainer"]:has(.rp-anchor) { height: 0; min-height: 0; margin: 0; }
+.rp-anchor { display: block; scroll-margin-top: 4rem; }
+[class*="st-key-src-"] button {
+  display: block; width: 100%; height: 100%; text-align: left; padding: var(--rp-s3);
+  border: 1px solid var(--rp-border-strong); border-radius: var(--rp-radius); background: transparent; color: inherit;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
-[class*="st-key-rp-src-"]:has(.rp-src:target) {
-  border-color: var(--rp-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--rp-primary) 22%, transparent);
+[class*="st-key-src-"] button:hover { border-color: var(--rp-accent); background: var(--rp-tint); color: inherit; }
+[class*="st-key-rp-src-"]:has(.rp-anchor:target) [class*="st-key-src-"] button { border-color: var(--rp-accent); box-shadow: var(--rp-ring); }
+[class*="st-key-src-"] button > div, [class*="st-key-src-"] button span { display: block; width: 100%; text-align: left; }
+[class*="st-key-src-"] button p {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: var(--rp-s2); align-items: center;
+  margin: 0; text-align: left;
 }
-.rp-src { scroll-margin-top: 4rem; }
-.rp-src-head { display: flex; gap: 0.5rem; align-items: baseline; font-size: 0.9rem; font-weight: 600; line-height: 1.35; }
-.rp-src-n {
-  flex: none; min-width: 1.3rem; padding: 0.05rem 0.3rem; border-radius: 0.4rem; text-align: center;
-  font-size: 0.72rem; background: var(--rp-accent-tint); border: 1px solid color-mix(in srgb, var(--rp-primary) 35%, transparent);
+[class*="st-key-src-"] button p > br { display: none; }
+[class*="st-key-src-"] button p > span:first-child {
+  min-width: 20px; padding: 0 5px; border-radius: 6px; text-align: center; line-height: 20px;
+  font-size: var(--rp-fs-meta); font-weight: 600; color: inherit !important; background: var(--rp-accent-tint);
 }
-.rp-src-meta { font-weight: 400; color: var(--rp-muted); }
-.rp-src-snippet { margin: 0.35rem 0 0.3rem !important; font-size: 0.875rem; line-height: 1.5; color: var(--rp-muted); }
-.rp-src-open, .rp-src-file { font-size: 0.8125rem; }
-.rp-src-open { color: var(--rp-accent-text) !important; text-decoration: none !important; font-weight: 500; }
-.rp-src-open:hover { text-decoration: underline !important; }
-.rp-src-open, .rp-src-file { display: inline-block; margin-bottom: 0.15rem; }
-.rp-src-file { color: var(--rp-muted); }
-[class*="st-key-rp-src-"] [data-testid="stExpander"] details { border: 0; background: transparent; }
-[class*="st-key-rp-src-"] summary { padding: 0.3rem 0; width: fit-content; }
-[class*="st-key-rp-src-"] summary p { font-size: 0.8125rem; color: var(--rp-muted); }
-[class*="st-key-rp-src-"] [data-testid="stExpanderDetails"] { padding: 0 0 0.5rem; font-size: 0.875rem; }
+[class*="st-key-src-"] button p > strong {
+  font-size: var(--rp-fs-small); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+[class*="st-key-src-"] button p > strong + span:not(:last-child) {
+  font-size: var(--rp-fs-meta); white-space: nowrap; color: var(--rp-muted) !important;
+}
+[class*="st-key-src-"] button p > span:last-child {
+  grid-column: 1 / -1; margin-top: 6px; font-size: var(--rp-fs-small); line-height: 1.45;
+  color: var(--rp-muted) !important; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; white-space: normal;
+}
 
-/* ---- Notices: info, warning, error and success share one neutral style with a coloured edge ---- */
+/* The source dialog. */
+.rp-dialog-title { font-size: var(--rp-fs-body); font-weight: 600; line-height: 1.4; }
+.st-key-rp-passage {
+  max-height: 55vh; overflow-y: auto; padding: 0 0 0 var(--rp-s4); margin-top: var(--rp-s2);
+  border-left: 2px solid var(--rp-border-strong) !important;
+}
+.st-key-rp-passage p { font-size: var(--rp-fs-body); line-height: 1.65; }
+
+/* =========================================================================== notices
+   Info, warning, error and success share one neutral style with a coloured edge. */
 [data-testid="stAlertContainer"] {
   background: var(--rp-tint) !important; color: inherit !important; border: 1px solid var(--rp-border);
-  border-left: 3px solid var(--rp-primary); border-radius: 0.6rem; padding: 0.65rem 0.85rem;
+  border-left: 3px solid var(--rp-accent); border-radius: var(--rp-radius-sm); padding: var(--rp-s3) var(--rp-s4);
 }
 [data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]) { border-left-color: #D97706; }
 [data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"]) { border-left-color: #DC2626; }
 [data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]) { border-left-color: #16A34A; }
-[data-testid^="stAlertContent"], [data-testid^="stAlertContent"] p { color: inherit !important; font-size: 0.9rem; }
+[data-testid^="stAlertContent"], [data-testid^="stAlertContent"] p { color: inherit !important; font-size: var(--rp-fs-small); }
 
-/* ---- Sidebar ---- */
-[data-testid="stSidebarHeader"] { height: 2.75rem; padding-top: 0.5rem; padding-bottom: 0; }
-[data-testid="stSidebarUserContent"] { padding-top: 0.25rem; padding-bottom: 1.5rem; }
-[data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"] { gap: 0.6rem; }
-[data-testid="stSidebar"] hr { margin: 0.4rem 0; }
-.rp-brand { font-size: 1rem; font-weight: 700; letter-spacing: -0.01em; }
-.rp-side-label {
-  font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--rp-muted);
-  margin: 0.5rem 0 0.35rem;
+/* =========================================================================== sidebar */
+[data-testid="stSidebarHeader"] { height: var(--rp-s7); padding-top: var(--rp-s3); padding-bottom: 0; }
+[data-testid="stSidebarUserContent"] { padding: 0 var(--rp-s4) var(--rp-s5); }
+[data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"] { gap: var(--rp-s2); }
+.st-key-rp-brand p { font-size: var(--rp-fs-body); font-weight: 600; }
+.st-key-rp-brand span[role="img"] { color: var(--rp-accent); font-size: 20px; vertical-align: -4px; margin-right: 2px; }
+.st-key-rp-new-chat button {
+  justify-content: flex-start; min-height: 36px; padding: var(--rp-s1) var(--rp-s3); margin-bottom: var(--rp-s3);
+  border: 1px solid var(--rp-border-strong); border-radius: var(--rp-radius-sm); background: transparent; color: inherit;
 }
-.st-key-rp-docs ul { list-style: none; padding: 0; margin: 0; }
-.st-key-rp-docs li { margin: 0 0 0.4rem; padding: 0; font-size: 0.875rem; line-height: 1.35; }
-.st-key-rp-docs a { color: inherit !important; text-decoration: none; }
-.st-key-rp-docs a::after { content: " ↗"; font-size: 0.75em; color: var(--rp-muted); }
-.st-key-rp-docs a:hover { text-decoration: underline; color: var(--rp-accent-text) !important; }
-.st-key-rp-mydocs [data-testid="stMarkdownContainer"] p { font-size: 0.875rem; line-height: 1.35; }
-[class*="st-key-rm-"] button { min-height: 1.9rem; padding: 0.1rem 0.45rem; width: 100%; }
-[class*="st-key-rm-"] button p { font-size: 0.8125rem; }
-.rp-meter { height: 4px; border-radius: 2px; background: var(--rp-border); overflow: hidden; margin-top: -0.4rem; }
-.rp-meter > span { display: block; height: 100%; border-radius: 2px; background: var(--rp-primary); }
-[data-testid="stFileUploaderDropzone"] {
-  background: var(--rp-tint); border: 1px dashed var(--rp-border-strong); border-radius: 0.6rem; padding: 0.6rem 0.75rem;
-}
-[data-testid="stFileUploaderDropzone"]:hover { border-color: var(--rp-primary); }
-[data-testid="stFileUploaderDropzoneInstructions"] { color: var(--rp-muted); }
-[data-testid="stFileUploaderDropzoneInstructions"] * { color: inherit !important; }
+.st-key-rp-new-chat button p { font-size: var(--rp-fs-small); font-weight: 500; }
+.st-key-rp-new-chat button > div { justify-content: flex-start; }
+.st-key-rp-new-chat button:hover { border-color: var(--rp-accent); color: inherit; }
+/* Disabled until a chat exists: quieter, but still readable (muted text, 4.9:1 or more). */
+.st-key-rp-new-chat button:disabled { opacity: 1; color: var(--rp-muted); border-color: var(--rp-border); background: transparent; }
+.st-key-rp-new-chat button:disabled p, .st-key-rp-new-chat button:disabled [data-testid="stIconMaterial"] { color: inherit; }
+/* Section headers: the "Search method" widget label and .rp-label look the same. */
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p { font-size: var(--rp-fs-meta); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--rp-muted); }
+[data-testid="stSidebar"] .rp-label { margin-top: var(--rp-s4); }
+[data-testid="stSidebar"] [data-baseweb="select"] > div { min-height: 36px; font-size: var(--rp-fs-small); }
+/* Document lists: one line each, ellipsis, the ↗ never wraps. */
+.rp-docs { list-style: none; margin: 0; padding: 0; }
+.rp-docs li { margin: 0; padding: 0; font-size: var(--rp-fs-small); line-height: 1.5; }
+.rp-docs li, .rp-docs a { display: flex; align-items: baseline; gap: var(--rp-s1); min-width: 0; }
+/* The link fills the row and pushes its ↗ to the end, so every arrow shares one right edge. */
+.rp-docs a { flex: 1 1 auto; padding: 3px 0; color: inherit !important; text-decoration: none !important; }
+.rp-doc-x { margin-left: auto; padding-left: var(--rp-s1); }
+.rp-doc-t { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rp-doc-x { flex: none; font-size: var(--rp-fs-meta); color: var(--rp-muted); }
+.rp-docs a:hover .rp-doc-t { text-decoration: underline; }
+.rp-docs a:hover .rp-doc-x { color: var(--rp-accent-text); }
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"]:last-of-type { margin-top: var(--rp-s2); }
 
-/* ---- First-start setup panel ---- */
-.st-key-rp-setup { border: 1px solid var(--rp-border); border-radius: 0.75rem; padding: 1rem 1.1rem; background: var(--rp-tint); }
+/* =========================================================================== first start */
+/* Centred like the empty state, at the same width; its explanation is reading text, so 13 px. */
+.st-key-rp-setup {
+  width: 100%; max-width: var(--rp-empty-width); margin: 0 auto; gap: var(--rp-s3) !important;
+  border: 1px solid var(--rp-border); border-radius: var(--rp-radius); padding: var(--rp-s5); background: var(--rp-tint);
+}
+.st-key-rp-setup [data-testid="stCaptionContainer"] { font-size: var(--rp-fs-small); line-height: 1.5; }
+.st-key-rp-setup [data-testid="stProgress"] p { font-size: var(--rp-fs-small); }
+[data-testid="stProgressBarTrack"] { background: var(--rp-border-strong); }
+
+/* =========================================================================== tooltips */
+[data-testid="stTooltipContent"] { max-width: var(--rp-tooltip-width) !important; }

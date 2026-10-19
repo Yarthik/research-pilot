@@ -84,16 +84,6 @@ def test_plural_and_model_label():
     assert model_label("custom", "m") == "m via custom"
 
 
-def test_answer_footer_reads_naturally():
-    from render import answer_footer
-
-    one = answer_footer({"seconds": 2.5, "round": 1, "evidence_count": 1})
-    assert one == "Answered in 2.5 s · 1 search round · 1 passage considered"
-    two = answer_footer({"seconds": 3.4, "round": 2, "evidence_count": 9})
-    assert two == "Answered in 3.4 s · 2 search rounds · 9 passages considered"
-    assert "(s)" not in one + two and "chunk" not in one + two
-
-
 def test_agent_steps_are_described_in_plain_english():
     from render import describe_step
 
@@ -237,22 +227,95 @@ def test_pdf_links_open_arxiv_papers_at_the_cited_page():
     assert pdf_page_url("notes.pdf", 3) is None
 
 
-def test_source_card_escapes_text_and_links_where_it_can():
-    from render import source_card_html
+# --------------------------------------------------------------------------- ui-v3 text pieces
+def test_steps_summary_and_questions_left_read_naturally():
+    from render import questions_left, steps_summary
 
-    arxiv = source_card_html(CITES[0], "Snippet with <b>tags</b> and https://www.example.com/a/b", "m1")
-    assert 'id="m1-1"' in arxiv and "· p. 4" in arxiv
-    assert 'href="https://arxiv.org/pdf/2106.09685#page=4"' in arxiv and "Open PDF at page 4 ↗" in arxiv
-    assert 'rel="noopener noreferrer"' in arxiv and "<b>" not in arxiv and "&lt;b&gt;tags" in arxiv
-    assert "example.com/a/b" in arxiv and "https://www.example.com" not in arxiv
-    upload = source_card_html({**CITES[1], "title": "<i>x</i>"}, "text", "m1")
-    assert "p." not in upload and "<a " not in upload and "notes.txt" in upload and "&lt;i&gt;x" in upload
-    web = source_card_html({"n": 3, "title": "Web", "source": "https://blog.example.org/post", "page": None}, "t", "m1")
-    assert 'href="https://blog.example.org/post"' in web and "blog.example.org/post ↗" in web
+    assert steps_summary({"round": 1, "evidence_count": 5, "seconds": 4.4}) == "Searched 1 round · 5 passages · 4.4 s"
+    assert steps_summary({"round": 2, "evidence_count": 1, "seconds": 9}) == "Searched 2 rounds · 1 passage · 9 s"
+    assert [questions_left(n) for n in (4, 1, 0, -1)] == [
+        "4 questions left",
+        "1 question left",
+        "No questions left",
+        "No questions left",
+    ]
 
 
-def test_question_meter_reports_what_is_left():
-    from render import meter_html
+def test_how_it_works_explains_the_loop_and_the_selected_method():
+    from render import how_it_works
 
-    assert 'aria-valuenow="4"' in meter_html(4, 5) and "width: 80%" in meter_html(4, 5)
-    assert "width: 0%" in meter_html(0, 5) and "width: 100%" in meter_html(9, 5) and "width: 0%" in meter_html(1, 0)
+    labels = {"hybrid": "Hybrid (recommended)", "bm25": "Keyword (BM25)"}
+    help_text = {"hybrid": "both", "bm25": "words"}
+    text = how_it_works(labels, help_text, "bm25", 2)
+    assert "**Plan**" in text and "up to 2 rounds" in text and "- **Keyword (BM25)**: words" in text
+    assert "Currently selected: **Keyword (BM25)**" in text and "#evaluation" in text
+    assert "Retrying is switched off" in how_it_works(labels, help_text, "hybrid", 1)
+
+
+def test_small_caps_splits_are_rejoined_only_where_safe():
+    from render import fix_small_caps
+
+    text = "4.2 A PPLYING LORA TO TRANSFORMER, 1 I NTRODUCTION, 2 R ELATED WORK, E XPERIMENTS"
+    assert fix_small_caps(text) == "4.2 APPLYING LORA TO TRANSFORMER, 1 INTRODUCTION, 2 RELATED WORK, EXPERIMENTS"
+    for kept in ("A NEW METHOD", "A STUDY OF", "I AM HERE", "A PROMPT", "See Table A here", "W_0 + B A x"):
+        assert fix_small_caps(kept) == kept
+    assert fix_small_caps("") == "" and fix_small_caps(None) == ""
+
+
+def test_source_card_labels_are_escaped_markdown():
+    from render import escape_markdown, source_button_label
+
+    assert escape_markdown("Use *bold* [12] $5 :red[x] a_b <b>") == r"Use \*bold\* (12) \$5 \:red(x) a\_b \<b\>"
+    label = source_button_label({"n": 2, "title": "LoRA: Low_Rank", "page": 4}, "The *matrix* [3] costs $5.")
+    assert label == r":gray[2] **LoRA\: Low\_Rank** :gray[p. 4]  " + "\n" + r":gray[The \*matrix\* (3) costs \$5.]"
+    no_page = source_button_label({"n": 1, "title": "notes", "page": None}, "Text.")
+    assert no_page == ":gray[1] **notes**  \n:gray[Text.]"
+
+
+def test_document_lists_show_short_names_with_full_escaped_titles():
+    from render import doc_list_html
+
+    out = doc_list_html([("A <b>", 'A <b>"bold"</b> title', "https://arxiv.org/pdf/1"), ("notes", "notes", None)])
+    assert out.startswith('<ul class="rp-docs">') and out.count("<li") == 2
+    assert 'href="https://arxiv.org/pdf/1" title="A &lt;b&gt;&quot;bold&quot;&lt;/b&gt; title"' in out
+    assert '<span class="rp-doc-t">A &lt;b&gt;</span>' in out
+    assert 'rel="noopener noreferrer"' in out and '<span class="rp-doc-x" aria-hidden="true">↗</span>' in out
+    assert '<li title="notes"><span class="rp-doc-t">notes</span></li>' in out
+    assert "<b>" not in out and "\n" not in out  # one line: an HTML block in Markdown must not be split
+
+
+def test_short_names_use_the_part_before_a_colon_or_a_word_boundary():
+    from render import SHORT_NAME_CHARS, short_name
+
+    assert short_name("LoRA: Low-Rank Adaptation of Large Language Models") == "LoRA"
+    assert short_name("ReAct: Synergizing Reasoning and Acting in Language Models") == "ReAct"
+    assert short_name("Attention Is All You Need") == "Attention Is All You Need"
+    assert short_name("Chain-of-Thought Prompting Elicits Reasoning in Large Language Models") == (
+        "Chain-of-Thought Prompting…"
+    )
+    assert short_name("Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks") == (
+        "Retrieval-Augmented Generation…"
+    )
+    long_head = "A heading far too long to be a short name: the rest"
+    assert short_name(long_head).endswith("…") and len(short_name(long_head)) <= SHORT_NAME_CHARS + 1
+    assert short_name(": leading colon") == ": leading colon" and short_name("") == ""
+
+
+def test_the_live_status_says_what_the_agent_does_next():
+    from render import next_activity
+
+    assert next_activity({"step": "plan"}) == "Searching the documents…"
+    assert next_activity({"step": "retrieve"}) == "Checking the passages…"
+    assert next_activity({"step": "grade", "new_queries": ["x"]}) == "Searching again…"
+    assert next_activity({"step": "grade", "sufficient": True}) == "Writing the answer…"
+    assert next_activity({"step": "grade", "skipped": True}) == "Writing the answer…"
+    assert next_activity({"step": "generate"}) is None
+
+
+def test_a_url_glued_to_the_previous_word_gets_a_space():
+    from render import shorten_urls
+
+    assert shorten_urls("GPT-2 athttps://github.com/microsoft/LoRA.") == "GPT-2 at github.com/microsoft/LoRA."
+    linked = shorten_urls("athttps://x.org/a", markdown=True)
+    assert linked == "at [x.org/a](https://x.org/a)"
+    assert shorten_urls("(https://x.org)") == "(x.org)"  # punctuation before a URL is left alone
