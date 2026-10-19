@@ -122,8 +122,7 @@ HEADING = "ResearchPilot"
 SUBTITLE = (
     "Ask a question. The agent searches, checks its evidence, searches again if needed, and answers with citations."
 )
-DEMO_PLACEHOLDER = "Ask about Transformers, RAG, LoRA, ReAct or chain-of-thought…"
-GENERIC_PLACEHOLDER = "Ask a question about your documents…"
+PLACEHOLDER = "Ask a question…"  # the same in every mode
 
 
 def _placeholder(at: AppTest) -> str:
@@ -145,7 +144,7 @@ def test_own_documents_mode_copy_settings_and_footer(loaded_retriever, monkeypat
     at = _app(monkeypatch).run()
     assert not at.exception
     _assert_landing_copy(at)
-    assert _placeholder(at) == GENERIC_PLACEHOLDER  # ALLOW_INGEST=true: the visitor's own documents
+    assert _placeholder(at) == PLACEHOLDER  # ALLOW_INGEST=true: the visitor's own documents
     assert at.selectbox[0].label == "Search method"
     labels = ["Hybrid (recommended)", "Hybrid + reranker", "Keyword (BM25)", "Semantic (vector)"]
     assert at.selectbox[0].options == labels
@@ -163,7 +162,7 @@ def test_own_documents_mode_copy_settings_and_footer(loaded_retriever, monkeypat
 
     sidebar = " ".join(c.value for c in at.sidebar.caption)
     assert "Built by Kartik Kaushik" in sidebar and "https://github.com/Yarthik/research-pilot" in sidebar
-    assert "gpt-oss-120b via Groq" in sidebar
+    assert "  \ngpt-oss-120b via Groq" in sidebar  # the model on its own line, so it never breaks at a hyphen
     assert any(e.label == "Manage library" for e in at.sidebar.expander)  # ALLOW_INGEST=true: editable
     page = _page_text(at) + sidebar
     assert "local mode" not in page and "chunks" not in page
@@ -183,10 +182,11 @@ def test_demo_mode_suggests_the_papers_topics_and_shows_clean_linked_titles(retr
     at = _app(monkeypatch, ALLOW_INGEST="false").run()
     assert not at.exception
     _assert_landing_copy(at)
-    assert _placeholder(at) == DEMO_PLACEHOLDER
+    assert _placeholder(at) == PLACEHOLDER
     links = " ".join(m.value for m in at.sidebar.markdown)
     title = "LoRA: Low-Rank Adaptation of Large Language Models"
-    assert f'href="{lora}" title="{title}"' in links and f'<span class="rp-doc-t">{title}</span>' in links
+    assert f'href="{lora}" title="{title}"' in links  # the full, title-cased title on hover
+    assert '<span class="rp-doc-t">LoRA</span>' in links  # a short name in the list
     assert "LORA: LOW-RANK" not in links
     assert any("read-only" in c.value for c in at.sidebar.caption)
     assert not at.sidebar.expander  # nothing to manage in a read-only demo
@@ -195,7 +195,7 @@ def test_demo_mode_suggests_the_papers_topics_and_shows_clean_linked_titles(retr
 def test_read_only_mode_with_other_documents_has_a_generic_placeholder(loaded_retriever, monkeypatch):
     at = _app(monkeypatch, ALLOW_INGEST="false").run()
     _assert_landing_copy(at)
-    assert _placeholder(at) == GENERIC_PLACEHOLDER
+    assert _placeholder(at) == PLACEHOLDER
 
 
 def test_answer_shows_collapsed_steps_chips_and_source_cards(loaded_retriever, fake_llm, monkeypatch):
@@ -243,12 +243,16 @@ def test_private_uploads_are_listed_only_in_their_session_and_can_be_removed(loa
     assert alice.chat_input[0].proto.accept_file == 2  # attach files in the composer (multiple)
     assert list(alice.chat_input[0].proto.file_type) == [".pdf", ".txt", ".md"]
     assert alice.button(key="rm-zebras.txt").label == "zebras"  # a removable chip by the composer
-    assert _placeholder(alice) == GENERIC_PLACEHOLDER
+    assert _placeholder(alice) == PLACEHOLDER
 
     bob = _session_app(monkeypatch, "bob").run()
     assert "zebras" not in _sidebar_text(bob) and "Your documents" not in _sidebar_text(bob)
     assert not [b for b in bob.button if b.key and b.key.startswith("rm-")]
     assert bob.chat_input[0].proto.accept_file == 2  # bob can attach his own
+
+    alice.button(key="rp-how").click().run()
+    how = " ".join(m.value for m in alice.markdown)
+    assert "with the + button in the message box" in how and "paperclip" not in how
 
     alice.button(key="rm-zebras.txt").click().run()
     assert get_registry().documents("alice") == []
@@ -296,3 +300,48 @@ def test_a_boolean_secret_makes_the_page_read_only(loaded_retriever, monkeypatch
     assert not at.get("file_uploader") and not at.sidebar.expander
     assert at.chat_input[0].proto.accept_file == 0
     assert any(c.value == "3 questions left" for c in at.caption)
+
+
+def test_source_cards_are_in_citation_order(loaded_retriever, fake_llm, monkeypatch):
+    fake_llm.responses = {
+        "ResearchPlan": [PLAN],
+        "ContextGrade": [{"sufficient": True}],
+        "Answer": [{"answer": "Frozen weights [2]. Low-rank matrices [1].", "cited_sources": [2, 1]}],
+    }
+    at = _app(monkeypatch).run()
+    at.chat_input[0].set_value("How does LoRA work?").run()
+    assert not at.exception
+    cards = [b.key for b in at.button if b.key and b.key.startswith("src-")]
+    assert cards == ["src-m1-1", "src-m1-2"]  # cited [2] first, shown in number order
+
+
+def test_an_unexpected_failure_shows_a_friendly_message_and_is_not_counted(loaded_retriever, monkeypatch):
+    import sys
+
+    sys.path.insert(0, str(APP.parent))
+    import backend
+
+    def failing_stream(self, question, mode=None, owner=None):
+        yield {"type": "step", "step": "plan", "queries": ["q"], "needs_web": False, "seconds": 0.1}
+        raise RuntimeError("disk I/O error at /secret/path")
+
+    monkeypatch.setattr(backend.LocalBackend, "ask_stream", failing_stream)
+    at = _app(monkeypatch, DEMO_MAX_QUESTIONS="2").run()
+    at.chat_input[0].set_value("How does LoRA work?").run()
+    assert not at.exception
+    assert [e.value for e in at.error] == [
+        "Something went wrong while answering, so this question wasn't counted. Please try again in a moment."
+    ]
+    page = " ".join(el.value for group in (at.markdown, at.error, at.caption) for el in group)
+    assert "disk I/O" not in page and "/secret/path" not in page  # details go to the log only
+    assert at.session_state["questions_asked"] == 0 and any(c.value == "2 questions left" for c in at.caption)
+    assert not at.status  # no live status left hanging on "Searching the documents…"
+    at.run()
+    assert len(at.error) == 1  # kept in the history, not lost on the next rerun
+
+
+def test_the_composer_says_when_the_demo_limit_is_reached(loaded_retriever, monkeypatch):
+    at = _app(monkeypatch, DEMO_MAX_QUESTIONS="1")
+    at.session_state["questions_asked"] = 1
+    at.run()
+    assert at.chat_input[0].disabled and _placeholder(at) == "Demo limit reached"

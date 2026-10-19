@@ -9,6 +9,7 @@ Components and styling are in app/ui.py and app/styles.css; text helpers in app/
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import threading
@@ -29,8 +30,10 @@ from render import (  # noqa: E402
     describe_step,
     how_it_works,
     model_label,
+    next_activity,
     plural,
     rate_limit_notice,
+    short_name,
     short_title,
     steps_summary,
 )
@@ -73,8 +76,10 @@ MODE_HELP = {
 SUBTITLE = (
     "Ask a question. The agent searches, checks its evidence, searches again if needed, and answers with citations."
 )
-DEMO_PLACEHOLDER = "Ask about Transformers, RAG, LoRA, ReAct or chain-of-thought…"
-GENERIC_PLACEHOLDER = "Ask a question about your documents…"
+PLACEHOLDER = "Ask a question…"
+LIMIT_PLACEHOLDER = "Demo limit reached"
+FAILURE_MESSAGE = "Something went wrong while answering, so this question wasn't counted. Please try again in a moment."
+log = logging.getLogger("researchpilot.app")
 
 st.set_page_config(page_title="ResearchPilot", page_icon=ICON, layout="centered")
 ui.inject_styles()
@@ -94,6 +99,12 @@ def backend():
 # --------------------------------------------------------------------------- helpers
 def display_title(title: str, limit: int = 90) -> str:
     return short_title(title_case_if_all_caps(title or ""), limit)
+
+
+def doc_entry(title: str, url: str | None = None) -> tuple[str, str, str | None]:
+    """(short name, full title, URL) for a sidebar list."""
+    full = display_title(title, 200)
+    return short_name(full), full, url
 
 
 def is_url(source: str) -> bool:
@@ -120,7 +131,7 @@ def how_it_works_text(mode: str) -> str:
     if session_uploads:
         text += (
             f"\n**Your own files**: attach up to {MAX_FILES} PDF, TXT or MD files ({MAX_FILE_MB} MB and "
-            f"{MAX_PDF_PAGES} pages each) with the paperclip in the message box. Only this browser tab can "
+            f"{MAX_PDF_PAGES} pages each) with the + button in the message box. Only this browser tab can "
             "search them, and they're removed when you remove them, reload the page, or after an hour idle.\n"
         )
     return text
@@ -239,11 +250,6 @@ def prepare_samples() -> None:
     st.rerun()  # ready: draw the page without the setup panel
 
 
-def only_sample_papers(sources: list[dict]) -> bool:
-    samples = set(read_sources_file(str(SAMPLE_FILE))) if SAMPLE_FILE.exists() else set()
-    return bool(sources) and all(s["source"] in samples for s in sources)
-
-
 # --------------------------------------------------------------------------- startup
 try:
     info = backend().info()
@@ -301,7 +307,7 @@ with st.sidebar:
     )
 
     ui.section_label("Library")
-    library = [(display_title(s["title"], 200), s["source"] if is_url(s["source"]) else None) for s in sources]
+    library = [doc_entry(s["title"], s["source"] if is_url(s["source"]) else None) for s in sources]
     ui.doc_list(library, key="rp-library")
     if can_edit:
         manage_library(sources)
@@ -310,15 +316,14 @@ with st.sidebar:
 
     if my_docs:
         ui.section_label("Your documents")
-        ui.doc_list([(display_title(d["title"], 200), None) for d in my_docs], key="rp-mydocs")
+        ui.doc_list([doc_entry(d["title"]) for d in my_docs], key="rp-mydocs")
         st.caption(":material/lock: Private to this tab · removed after an hour idle")
 
     st.caption(
-        f"Built by Kartik Kaushik · [GitHub]({GITHUB_URL}) · {model_label(info['llm_provider'], info['llm_model'])}"
+        f"Built by Kartik Kaushik · [GitHub]({GITHUB_URL})  \n{model_label(info['llm_provider'], info['llm_model'])}"
     )
 
 # --------------------------------------------------------------------------- chat
-demo_corpus = not can_edit and not my_docs and only_sample_papers(sources)
 has_documents = bool(sources or my_docs)
 left_text = None if questions_left is None else questions_left_text(questions_left)
 composer_options = (
@@ -331,7 +336,7 @@ composer_options = (
 def composer(area):
     """The chat input; with private uploads on, its attach button adds files to this session's index."""
     return area.chat_input(
-        DEMO_PLACEHOLDER if demo_corpus else GENERIC_PLACEHOLDER,
+        LIMIT_PLACEHOLDER if limit_reached else PLACEHOLDER,
         key="composer",
         disabled=not has_documents or limit_reached,
         **composer_options,
@@ -379,6 +384,8 @@ else:
                 st.markdown(message["content"])
             elif "notice" in message:  # the question couldn't be answered (e.g. the LLM quota is used up)
                 st.warning(message["notice"], icon=":material/hourglass_top:")
+            elif "error" in message:  # it failed for another reason (details in the log)
+                st.error(message["error"], icon=":material/error:")
             else:
                 render_result(message["result"], prefix=f"m{index}")
     with st.bottom:
@@ -418,30 +425,40 @@ if question and not limit_reached:
 pending = st.session_state.pop("pending", None)
 if pending:
     with st.chat_message("assistant", avatar=ICON):
-        result, notice = None, None
+        result, notice, failure = None, None, None
         progress = st.empty()  # the live steps; replaced by the finished answer (with its collapsed steps)
-        try:
-            with (
-                progress.container(),
-                st.container(key="rp-steps-live"),
-                st.status("Searching the documents…", expanded=True) as status,
-            ):
-                status.write(":material/hourglass_top: Planning the searches…")  # shown at once, before any step
-                try:
-                    for event in backend().ask_stream(pending, mode=mode, owner=owner if session_uploads else None):
-                        if event["type"] == "step":
-                            status.write(f"{ui.STEP_ICONS.get(event['step'], '•')} {describe_step(event)}")
-                        elif event["type"] == "result":
-                            result = event
-                except LLMRateLimitError as exc:  # the provider's quota is used up: friendly message, not the error
-                    notice = rate_limit_notice(exc.daily)
-                    status.update(label="The LLM's free-tier limit was reached", state="error", expanded=False)
-                else:
-                    status.update(label="Done", state="complete", expanded=False)
-        except LLMConfigError as exc:
-            st.error(f"The LLM isn't configured: {exc}. Set LLM_PROVIDER, LLM_MODEL and the API key in `.env`.")
-        except Exception as exc:
-            st.error(f"Something went wrong: {exc}")
+        with (
+            progress.container(),
+            st.container(key="rp-steps-live"),
+            st.status("Searching the documents…", expanded=True) as status,
+        ):
+            done = st.container()  # finished steps, in order
+            doing = st.empty()  # what the agent is doing now; replaced when each step finishes
+            doing.markdown(":material/hourglass_top: Planning the searches…")  # shown at once
+            try:
+                for event in backend().ask_stream(pending, mode=mode, owner=owner if session_uploads else None):
+                    if event["type"] == "step":
+                        done.markdown(f"{ui.STEP_ICONS.get(event['step'], '•')} {describe_step(event)}")
+                        activity = next_activity(event)
+                        if activity:
+                            doing.markdown(f":material/hourglass_top: {activity}")
+                        else:
+                            doing.empty()
+                    elif event["type"] == "result":
+                        result = event
+            except LLMRateLimitError as exc:  # the provider's quota is used up: friendly message, not the error
+                notice = rate_limit_notice(exc.daily)
+            except LLMConfigError as exc:  # for whoever runs the app, so it names the settings
+                failure = f"The LLM isn't configured: {exc}. Set LLM_PROVIDER, LLM_MODEL and the API key in `.env`."
+            except Exception:  # anything else: a friendly message; the details go to the log, not the page
+                log.exception("answering %r failed", pending)
+                failure = FAILURE_MESSAGE
+            doing.empty()
+            if result:
+                status.update(label="Done", state="complete", expanded=False)
+            else:
+                stopped = "The LLM's free-tier limit was reached" if notice else "Stopped"
+                status.update(label=stopped, state="error", expanded=False)
         if result:
             progress.empty()
             render_result(result, prefix=f"m{len(messages)}")
@@ -450,4 +467,6 @@ if pending:
         st.session_state.questions_asked -= 1  # only answered questions count towards the demo limit
         if notice:
             messages.append({"role": "assistant", "notice": notice})
-            st.rerun()  # shows the notice from the history, with the refunded question in the count
+        else:
+            messages.append({"role": "assistant", "error": failure or FAILURE_MESSAGE})
+        st.rerun()  # show it from the history, with the refunded question in the count

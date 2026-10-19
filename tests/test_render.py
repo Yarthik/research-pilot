@@ -272,12 +272,50 @@ def test_source_card_labels_are_escaped_markdown():
     assert no_page == ":gray[1] **notes**  \n:gray[Text.]"
 
 
-def test_document_lists_are_one_line_entries_with_escaped_titles():
+def test_document_lists_show_short_names_with_full_escaped_titles():
     from render import doc_list_html
 
-    out = doc_list_html([('A <b>"bold"</b> title', "https://arxiv.org/pdf/1"), ("notes.txt", None)])
+    out = doc_list_html([("A <b>", 'A <b>"bold"</b> title', "https://arxiv.org/pdf/1"), ("notes", "notes", None)])
     assert out.startswith('<ul class="rp-docs">') and out.count("<li") == 2
     assert 'href="https://arxiv.org/pdf/1" title="A &lt;b&gt;&quot;bold&quot;&lt;/b&gt; title"' in out
+    assert '<span class="rp-doc-t">A &lt;b&gt;</span>' in out
     assert 'rel="noopener noreferrer"' in out and '<span class="rp-doc-x" aria-hidden="true">↗</span>' in out
-    assert '<li title="notes.txt"><span class="rp-doc-t">notes.txt</span></li>' in out
+    assert '<li title="notes"><span class="rp-doc-t">notes</span></li>' in out
     assert "<b>" not in out and "\n" not in out  # one line: an HTML block in Markdown must not be split
+
+
+def test_short_names_use_the_part_before_a_colon_or_a_word_boundary():
+    from render import SHORT_NAME_CHARS, short_name
+
+    assert short_name("LoRA: Low-Rank Adaptation of Large Language Models") == "LoRA"
+    assert short_name("ReAct: Synergizing Reasoning and Acting in Language Models") == "ReAct"
+    assert short_name("Attention Is All You Need") == "Attention Is All You Need"
+    assert short_name("Chain-of-Thought Prompting Elicits Reasoning in Large Language Models") == (
+        "Chain-of-Thought Prompting…"
+    )
+    assert short_name("Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks") == (
+        "Retrieval-Augmented Generation…"
+    )
+    long_head = "A heading far too long to be a short name: the rest"
+    assert short_name(long_head).endswith("…") and len(short_name(long_head)) <= SHORT_NAME_CHARS + 1
+    assert short_name(": leading colon") == ": leading colon" and short_name("") == ""
+
+
+def test_the_live_status_says_what_the_agent_does_next():
+    from render import next_activity
+
+    assert next_activity({"step": "plan"}) == "Searching the documents…"
+    assert next_activity({"step": "retrieve"}) == "Checking the passages…"
+    assert next_activity({"step": "grade", "new_queries": ["x"]}) == "Searching again…"
+    assert next_activity({"step": "grade", "sufficient": True}) == "Writing the answer…"
+    assert next_activity({"step": "grade", "skipped": True}) == "Writing the answer…"
+    assert next_activity({"step": "generate"}) is None
+
+
+def test_a_url_glued_to_the_previous_word_gets_a_space():
+    from render import shorten_urls
+
+    assert shorten_urls("GPT-2 athttps://github.com/microsoft/LoRA.") == "GPT-2 at github.com/microsoft/LoRA."
+    linked = shorten_urls("athttps://x.org/a", markdown=True)
+    assert linked == "at [x.org/a](https://x.org/a)"
+    assert shorten_urls("(https://x.org)") == "(x.org)"  # punctuation before a URL is left alone

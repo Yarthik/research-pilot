@@ -83,6 +83,19 @@ def streamlit_markdown(text: str) -> str:
     return "".join(part if n % 2 else _prose_markdown(part) for n, part in enumerate(parts))
 
 
+SHORT_NAME_CHARS = 30  # about one line in the sidebar and in a half-width source card
+
+
+def short_name(title: str, limit: int = SHORT_NAME_CHARS) -> str:
+    """A short display name: the part before the first colon ("LoRA: Low-Rank ..." -> "LoRA"),
+    otherwise the title cut at a word boundary. Display only; the full title stays in the metadata."""
+    title = " ".join((title or "").split())
+    head, colon, _ = title.partition(":")
+    if colon and head.strip() and len(head.strip()) <= limit:
+        return head.strip()
+    return short_title(title, limit)
+
+
 def short_title(title: str, limit: int = 80) -> str:
     """Shorten a title on a word boundary, with an ellipsis, instead of cutting a word in half."""
     title = " ".join((title or "").split())
@@ -176,6 +189,18 @@ def describe_step(event: dict) -> str:
         cited = len(event.get("cited", [])) or "none"
         return f"Wrote the answer from {plural(event.get('sources', 0), 'passage')}, citing {cited}{seconds}"
     return str(event)
+
+
+def next_activity(event: dict) -> str | None:
+    """The live status's "now doing" line after a step finishes (None once the answer is written)."""
+    step = event.get("step")
+    if step == "plan":
+        return "Searching the documents…"
+    if step == "retrieve":
+        return "Checking the passages…"
+    if step == "grade":
+        return "Searching again…" if event.get("new_queries") else "Writing the answer…"
+    return None
 
 
 def rate_limit_notice(daily: bool) -> str:
@@ -276,10 +301,12 @@ def shorten_urls(text: str, limit: int = 40, markdown: bool = False) -> str:
         url, tail = match.group(0), ""
         while url and url[-1] in ".,;:!?":  # sentence punctuation isn't part of the URL
             url, tail = url[:-1], url[-1] + tail
+        # PDF text sometimes glues a URL to the word before it ("athttps://..."); keep them apart.
+        lead = " " if match.start() and match.string[match.start() - 1].isalnum() else ""
         short = short_url(url, limit)
         if markdown:
-            return f"[{_MARKDOWN_SPECIAL.sub(r'\\\1', short)}]({url}){tail}"
-        return short + tail
+            return f"{lead}[{_MARKDOWN_SPECIAL.sub(r'\\\1', short)}]({url}){tail}"
+        return lead + short + tail
 
     return _URL.sub(replace, text or "")
 
@@ -377,16 +404,16 @@ def source_button_label(citation: dict, snippet: str) -> str:
     )
 
 
-def doc_list_html(items: list[tuple[str, str | None]]) -> str:
-    """One-line document entries: the full title on hover, a link with a non-wrapping ↗ if there's a URL."""
+def doc_list_html(items: list[tuple[str, str, str | None]]) -> str:
+    """One-line entries of (short name, full title, URL): the full title on hover, a ↗ if there's a URL."""
     rows = []
-    for title, url in items:
-        name = f'<span class="rp-doc-t">{html.escape(title)}</span>'
+    for name, title, url in items:
+        label = f'<span class="rp-doc-t">{html.escape(name)}</span>'
         if url:
             rows.append(
                 f'<li><a href="{html.escape(url)}" title="{html.escape(title)}" target="_blank" '
-                f'rel="noopener noreferrer">{name}<span class="rp-doc-x" aria-hidden="true">↗</span></a></li>'
+                f'rel="noopener noreferrer">{label}<span class="rp-doc-x" aria-hidden="true">↗</span></a></li>'
             )
         else:
-            rows.append(f'<li title="{html.escape(title)}">{name}</li>')
+            rows.append(f'<li title="{html.escape(title)}">{label}</li>')
     return f'<ul class="rp-docs">{"".join(rows)}</ul>'

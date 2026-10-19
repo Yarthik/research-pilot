@@ -23,7 +23,7 @@ from render import (
     doc_list_html,
     fix_small_caps,
     pdf_page_url,
-    short_title,
+    short_name,
     shorten_urls,
     source_anchor,
     source_button_label,
@@ -50,8 +50,8 @@ def section_label(text: str) -> None:
     st.markdown(f'<div class="rp-label">{html.escape(text)}</div>', unsafe_allow_html=True)
 
 
-def doc_list(items: list[tuple[str, str | None]], key: str) -> None:
-    """One line per document, truncated with the full title on hover (see render.doc_list_html)."""
+def doc_list(items: list[tuple[str, str, str | None]], key: str) -> None:
+    """One line per document: (short name, full title, URL); the full title shows on hover."""
     with st.container(key=key):
         st.markdown(doc_list_html(items), unsafe_allow_html=True)
 
@@ -88,7 +88,7 @@ def file_chips(docs: list[dict]) -> str | None:
     removed = None
     with st.container(key="rp-files", horizontal=True, gap="small"):
         for doc in docs:
-            label = short_title(doc["title"], 28)
+            label = short_name(doc["title"])
             if st.button(
                 label,
                 key=f"rm-{doc['source']}",
@@ -134,13 +134,15 @@ def source_dialog(citation: dict) -> None:
 
 
 def source_grid(citations: list[dict], answer: str, prefix: str) -> None:
-    """Cited sources as a two-column grid of compact cards (one column on a phone).
+    """Cited sources as a two-column grid of compact cards (one column on a phone), in citation order.
 
     Each card is a single button that opens the full passage. An empty anchor before it is the
-    target of the answer's citation chips, which scroll to the card and highlight it.
+    target of the answer's citation chips, which scroll to the card and highlight it. Cards show a
+    short name (the full title is on hover and in the dialog).
     """
     if not citations:
         return
+    citations = sorted(citations, key=lambda c: c["n"])  # [1], [2], [3], whatever order retrieval found them
     section_label("Sources")
     with st.container(key=f"rp-sources-{prefix}"):
         for row in range(0, len(citations), 2):
@@ -154,6 +156,8 @@ def source_grid(citations: list[dict], answer: str, prefix: str) -> None:
                     st.markdown(
                         f'<span class="rp-anchor" id="{source_anchor(prefix, number)}"></span>', unsafe_allow_html=True
                     )
-                    label = source_button_label(citation, shorten_urls(fix_small_caps(snippet)))
-                    if st.button(label, key=f"src-{prefix}-{number}", width="stretch", wrap=True):
+                    card = dict(citation, title=short_name(citation.get("title", "")))
+                    label = source_button_label(card, shorten_urls(fix_small_caps(snippet)))
+                    full_title = citation.get("title", "")
+                    if st.button(label, key=f"src-{prefix}-{number}", width="stretch", wrap=True, help=full_title):
                         source_dialog(citation)

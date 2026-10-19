@@ -12,6 +12,7 @@
   --rp-accent: #2F6FE4;            /* = primaryColor in .streamlit/config.toml */
   --rp-width: 760px;               /* the reading column */
   --rp-empty-width: 640px;         /* the empty state's group */
+  --rp-tooltip-width: 320px;       /* help tooltips: narrow enough not to cover the reading column */
 }
 :root {
   /* Derived from the current text colour, so one rule works in light and dark (see ui.py). On :root, not
@@ -69,12 +70,14 @@ header[data-testid="stHeader"] { height: 2.5rem; }
 
 /* =========================================================================== empty state
    One group, centred vertically while it is on the page. */
-[data-testid="stMainBlockContainer"]:has(.st-key-rp-empty) {
+[data-testid="stMainBlockContainer"]:has(.st-key-rp-empty),
+[data-testid="stMainBlockContainer"]:has(.st-key-rp-setup) {
   min-height: 100dvh; display: flex; flex-direction: column; justify-content: center;
   padding-top: var(--rp-s7); padding-bottom: var(--rp-s6);
 }
 /* The block inside the column stretches to full height (flex: 1), so it centres its content too. */
-[data-testid="stMainBlockContainer"]:has(.st-key-rp-empty) > [data-testid="stVerticalBlock"] { justify-content: center; }
+[data-testid="stMainBlockContainer"]:has(.st-key-rp-empty) > [data-testid="stVerticalBlock"],
+[data-testid="stMainBlockContainer"]:has(.st-key-rp-setup) > [data-testid="stVerticalBlock"] { justify-content: center; }
 .st-key-rp-empty { width: 100%; max-width: var(--rp-empty-width); margin: 0 auto; gap: var(--rp-s4) !important; }
 .st-key-rp-hero { gap: 0 !important; margin-bottom: var(--rp-s3); }
 .st-key-rp-hero [data-testid="stElementContainer"] { width: 100%; }
@@ -115,11 +118,15 @@ header[data-testid="stHeader"] { height: 2.5rem; }
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 [data-testid="stChatInput"]:focus-within { border-color: var(--rp-accent); box-shadow: var(--rp-ring); }
+/* Disabled (no questions left): visibly unavailable rather than an input that ignores you. */
+[data-testid="stChatInput"]:has(textarea:disabled) { border-style: dashed; border-color: var(--rp-border-strong); background: transparent; }
 [data-testid="stChatInput"] > div { background: transparent; border: 0; }
 [data-testid="stChatInputTextArea"] { font-size: var(--rp-fs-body); }
 /* The composer shows focus with its own ring, so the text area inside needs no second outline. */
 [data-testid="stChatInputTextArea"]:focus, [data-testid="stChatInputTextArea"]:focus-visible { outline: none !important; }
-.st-key-rp-meta { min-height: 0; margin-top: calc(-1 * var(--rp-s2)); padding: 0 var(--rp-s1); }
+.st-key-rp-meta { min-height: 0; margin-top: calc(-1 * var(--rp-s2)); padding: 0 var(--rp-s1); align-items: baseline !important; }
+/* One line height for the link (the button sets its own, 1.6) and the count, so their baselines match. */
+.st-key-rp-meta button, .st-key-rp-meta button *, .st-key-rp-meta [data-testid="stCaptionContainer"] p { line-height: 1.5 !important; }
 .st-key-rp-meta button { min-height: 0; padding: 0; font-size: var(--rp-fs-meta); color: var(--rp-accent-text); }
 .st-key-rp-meta button p { font-size: var(--rp-fs-meta); font-weight: 500; }
 .st-key-rp-meta button:hover { color: var(--rp-accent-text); text-decoration: underline; }
@@ -250,7 +257,9 @@ a.rp-cite:hover { background: var(--rp-accent); color: #fff !important; }
 .rp-docs { list-style: none; margin: 0; padding: 0; }
 .rp-docs li { margin: 0; padding: 0; font-size: var(--rp-fs-small); line-height: 1.5; }
 .rp-docs li, .rp-docs a { display: flex; align-items: baseline; gap: var(--rp-s1); min-width: 0; }
-.rp-docs a { padding: 3px 0; color: inherit !important; text-decoration: none !important; }
+/* The link fills the row and pushes its ↗ to the end, so every arrow shares one right edge. */
+.rp-docs a { flex: 1 1 auto; padding: 3px 0; color: inherit !important; text-decoration: none !important; }
+.rp-doc-x { margin-left: auto; padding-left: var(--rp-s1); }
 .rp-doc-t { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rp-doc-x { flex: none; font-size: var(--rp-fs-meta); color: var(--rp-muted); }
 .rp-docs a:hover .rp-doc-t { text-decoration: underline; }
@@ -258,6 +267,14 @@ a.rp-cite:hover { background: var(--rp-accent); color: #fff !important; }
 [data-testid="stSidebar"] [data-testid="stCaptionContainer"]:last-of-type { margin-top: var(--rp-s2); }
 
 /* =========================================================================== first start */
+/* Centred like the empty state, at the same width; its explanation is reading text, so 13 px. */
 .st-key-rp-setup {
-  border: 1px solid var(--rp-border); border-radius: var(--rp-radius); padding: var(--rp-s4) var(--rp-s5); background: var(--rp-tint);
+  width: 100%; max-width: var(--rp-empty-width); margin: 0 auto; gap: var(--rp-s3) !important;
+  border: 1px solid var(--rp-border); border-radius: var(--rp-radius); padding: var(--rp-s5); background: var(--rp-tint);
 }
+.st-key-rp-setup [data-testid="stCaptionContainer"] { font-size: var(--rp-fs-small); line-height: 1.5; }
+.st-key-rp-setup [data-testid="stProgress"] p { font-size: var(--rp-fs-small); }
+[data-testid="stProgressBarTrack"] { background: var(--rp-border-strong); }
+
+/* =========================================================================== tooltips */
+[data-testid="stTooltipContent"] { max-width: var(--rp-tooltip-width) !important; }
