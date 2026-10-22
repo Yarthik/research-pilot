@@ -28,6 +28,10 @@ class Document:
     def char_count(self) -> int:
         return sum(len(text) for _, text in self.pages)
 
+    @property
+    def text(self) -> str:
+        return "\n".join(text for _, text in self.pages)
+
 
 CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
@@ -183,11 +187,24 @@ def load_pdf_file(path: str | Path) -> Document:
     return load_pdf_bytes(path.read_bytes(), path.name)
 
 
+def decode_text(data: bytes) -> str:
+    """A text file's contents: UTF-8 (with or without a BOM), UTF-16 with a BOM, else Windows-1252.
+
+    Decoding a Windows ("ANSI") file as UTF-8 would turn every accented letter into U+FFFD.
+    """
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        text = data.decode("utf-16", errors="replace")
+    else:
+        try:
+            text = data.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = data.decode("cp1252", errors="replace")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def load_text_file(path: str | Path) -> Document:
     path = Path(path)
-    return Document(
-        source=path.name, title=path.stem, pages=[(None, path.read_text(encoding="utf-8", errors="replace"))]
-    )
+    return Document(source=path.name, title=path.stem, pages=[(None, decode_text(path.read_bytes()))])
 
 
 def load_url(url: str, timeout: float = 60) -> Document:

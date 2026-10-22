@@ -26,8 +26,9 @@ import numpy as np
 
 from ..caching import build_once
 from ..config import get_settings
+from ..ingestion import quality
 from ..ingestion.chunking import Chunk, chunk_document
-from ..ingestion.loaders import Document, load_pdf_bytes
+from ..ingestion.loaders import Document, decode_text, load_pdf_bytes
 from .bm25 import BM25Index
 from .hybrid import HybridRetriever
 
@@ -49,6 +50,22 @@ class SessionUploadError(ValueError):
 
 class SessionsFull(SessionUploadError):
     """Too many sessions hold uploads right now."""
+
+
+def unreadable_message(name: str) -> str:
+    """Why a file whose text layer is mojibake was refused (see ingestion/quality.py)."""
+    if name.lower().endswith(".pdf"):
+        return f"{name}'s text can't be read: the PDF stores its text in a non-standard font encoding or as images."
+    return f"{name}'s text can't be read: it isn't text in a standard encoding."
+
+
+@dataclass
+class PreparedFile:
+    """A file that passed every check and is chunked, but not yet embedded (that is the slow part)."""
+
+    name: str
+    chunks: list[Chunk]
+    info: dict  # {"source", "title", "chunks", "pages", "kept", "english"}
 
 
 @dataclass
@@ -188,7 +205,7 @@ def _load(name: str, data: bytes) -> tuple[Document, dict | None]:
             last = max((number or 0 for number, _ in doc.pages), default=0)
             kept = {"unit": "pages", "kept": last, "total": total}
     else:
-        doc = Document(source=name, title=Path(name).stem, pages=[(None, data.decode("utf-8", errors="replace"))])
+        doc = Document(source=name, title=Path(name).stem, pages=[(None, decode_text(data))])
         if doc.char_count > MAX_CHARS:
             kept = {"unit": "characters", "kept": MAX_CHARS, "total": doc.char_count}
             doc = _cut(doc, MAX_CHARS)
@@ -258,18 +275,36 @@ class SessionRegistry:
             return SessionRetriever(shared, docs)
 
     # files -----------------------------------------------------------------------
-    def _check_room(self, owner: str, name: str) -> None:
+    def _check_room(self, owner: str, name: str, also_adding: list[str] = ()) -> None:
         docs = self._sessions.get(owner)
         if docs is None and len(self._sessions) >= self.max_sessions:
             raise SessionsFull(
                 "Private uploads are at capacity right now, because other visitors are using them. "
                 "Please try again later; you can still ask about the shared papers."
             )
-        if docs is not None and name not in docs.files and len(docs.files) >= MAX_FILES:
+        attached = set(docs.files) if docs is not None else set()
+        if name not in attached and len(attached | set(also_adding)) >= MAX_FILES:
             raise SessionUploadError(f"You can add up to {MAX_FILES} files. Remove one to add another.")
 
-    def add_file(self, owner: str, name: str, data: bytes) -> dict:
-        """Validate, chunk and embed one file into `owner`'s private documents (replacing a same-named one)."""
+    def prepare_files(self, owner: str, files: list[tuple[str, bytes]]) -> list[PreparedFile | SessionUploadError]:
+        """Check, read and chunk files for `owner`, without embedding them: one result per file, in order.
+
+        Fast, so a file that can't be added (too big, no text, unreadable text, one too many) is refused
+        before a question that comes with it is sent. Files in the same batch count towards the limit.
+        """
+        results: list[PreparedFile | SessionUploadError] = []
+        names: list[str] = []
+        for name, data in files:
+            try:
+                prepared = self._prepare(owner, name, data, also_adding=names)
+            except SessionUploadError as exc:
+                results.append(exc)
+                continue
+            results.append(prepared)
+            names.append(prepared.name)
+        return results
+
+    def _prepare(self, owner: str, name: str, data: bytes, also_adding: list[str]) -> PreparedFile:
         name = Path(name or "").name or "upload.txt"
         if not name.lower().endswith(SUFFIXES):
             raise SessionUploadError(f"{name}: only PDF, TXT and MD files can be added.")
@@ -277,32 +312,53 @@ class SessionRegistry:
             raise SessionUploadError(f"{name} is {_megabytes(len(data))}; the limit is {MAX_FILE_MB} MB.")
         self.cleanup()
         with self._lock:
-            self._check_room(owner, name)
+            self._check_room(owner, name, also_adding)
 
         doc, kept = _load(name, data)
         settings = get_settings()
         chunks = chunk_document(doc, settings.chunk_size, settings.chunk_overlap)
         if not chunks:
             raise SessionUploadError(f"{name} has no extractable text (scanned PDFs need OCR first).")
+        check = quality.assess(doc.text)
+        if not check.readable:
+            log.info("refused %s: unreadable text layer %s", name, check.stats)
+            raise SessionUploadError(unreadable_message(name))
         # Distinct ids, so a file named like a shared source can't be merged with it during fusion.
         chunks = [replace(chunk, id=f"session-{chunk.id}") for chunk in chunks]
+        info = {
+            "source": name,
+            "title": doc.title,
+            "chunks": len(chunks),
+            "pages": len(doc.pages),
+            "kept": kept,
+            "english": check.english,
+        }
+        return PreparedFile(name=name, chunks=chunks, info=info)
+
+    def index(self, owner: str, prepared: PreparedFile) -> dict:
+        """Embed a prepared file into `owner`'s private documents (replacing a same-named one). The slow part."""
         embed = self._embed
         if embed is None:
             from . import embeddings
 
             embed = embeddings.embed_texts
         with self._embed_lock:
-            vectors = embed([chunk.text for chunk in chunks])
-
-        info = {"source": name, "title": doc.title, "chunks": len(chunks), "pages": len(doc.pages), "kept": kept}
+            vectors = embed([chunk.text for chunk in prepared.chunks])
         with self._lock:
-            self._check_room(owner, name)  # again: another upload may have finished meanwhile
+            self._check_room(owner, prepared.name)  # again: another upload may have finished meanwhile
             docs = self._sessions.setdefault(owner, SessionDocs(last_used=self._clock()))
-            docs.drop(name)
-            docs.add(chunks, vectors)
-            docs.files[name] = info
+            docs.drop(prepared.name)
+            docs.add(prepared.chunks, vectors)
+            docs.files[prepared.name] = prepared.info
             docs.last_used = self._clock()
-        return info
+        return prepared.info
+
+    def add_file(self, owner: str, name: str, data: bytes) -> dict:
+        """Check, chunk and embed one file into `owner`'s private documents (replacing a same-named one)."""
+        (result,) = self.prepare_files(owner, [(name, data)])
+        if isinstance(result, SessionUploadError):
+            raise result
+        return self.index(owner, result)
 
     def remove(self, owner: str, source: str) -> bool:
         with self._lock:

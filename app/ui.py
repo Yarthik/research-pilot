@@ -24,6 +24,7 @@ from render import (
     file_chip_label,
     fix_small_caps,
     kept_note,
+    language_note,
     pdf_page_url,
     short_name,
     shorten_urls,
@@ -35,6 +36,7 @@ from render import (
 STYLES = Path(__file__).with_name("styles.css")
 CARD_SNIPPET_CHARS = 170  # about two lines in a half-width card; the stylesheet clamps it to two
 STEP_ICONS = {
+    "index": ":material/upload_file:",
     "condense": ":material/forum:",
     "clarify": ":material/help:",
     "plan": ":material/checklist:",
@@ -97,7 +99,10 @@ def composer_notices() -> None:
 
 
 def file_chips(docs: list[dict]) -> str | None:
-    """The visitor's attached files as small removable chips. Returns the source to remove, if clicked."""
+    """The visitor's attached files as small removable chips. Returns the source to remove, if clicked.
+
+    A file that isn't in English gets a short notice beside the chips, for as long as it is attached.
+    """
     removed = None
     with st.container(key="rp-files", horizontal=True, gap="small"):
         for doc in docs:
@@ -110,6 +115,10 @@ def file_chips(docs: list[dict]) -> str | None:
                 help=f"Remove {doc['title']} (private to this tab)." + (f" {note}" if note else ""),
             ):
                 removed = doc["source"]
+    language = language_note(docs)
+    if language:
+        with st.container(key="rp-lang"):
+            st.caption(f":material/translate: {language}")
     return removed
 
 

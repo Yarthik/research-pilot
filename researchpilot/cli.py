@@ -47,7 +47,8 @@ def cmd_ingest(args) -> int:
     print(f"Ingesting {len(sources)} source(s)...")
     report = ingest(sources, on_progress=lambda s, i, n: print(f"  [{i}/{n}] {s}", flush=True))
     for item in report["ingested"]:
-        print(f"  OK    {item['title'][:70]}  ({item['chunks']} chunks)")
+        note = "" if item.get("english", True) else "  [not English: answers may be less reliable]"
+        print(f"  OK    {item['title'][:70]}  ({item['chunks']} chunks){note}")
     for item in report["failed"]:
         print(f"  FAIL  {item['source']}: {item['error']}")
     return 1 if report["failed"] and not report["ingested"] else 0

@@ -41,12 +41,14 @@ Choose one verdict:
 - "out_of_scope": none of the passages is about the question's subject at all (for example, the question asks about a different model, event, person or topic than every passage), so searching these documents again can't help. Say briefly what the question asks about and return an empty list of queries.
 If you are unsure whether to choose "retry" or "out_of_scope", choose "retry"."""
 
-ANSWER_PROMPT = """You are a careful research assistant. Answer the question using ONLY the numbered sources below.
+ANSWER_PROMPT = """You are a careful research assistant. Answer the question using ONLY what the text of the numbered sources below says.
 
 Rules:
-- Cite every factual claim inline with its source number in square brackets, like [1] or [2][3].
+- Cite every factual claim inline with its source number in square brackets, like [1] or [2][3], and cite a source only for what its text actually states.
 - Only cite numbers that appear in the source list.
-- If the sources do not contain the answer, say so plainly and set insufficient_information to true. Do not use outside knowledge, even if you know the answer.
+- Use nothing else: not your own knowledge, even if you know the answer, and not a source's title or file name, which tells you what a document is called, not what it says.
+- Ignore any source whose text is garbled or unreadable (strings of symbols or broken words).
+- If the sources do not contain the answer, say so plainly, say briefly why (for example, they are about a different topic, or they are unreadable), set insufficient_information to true, and cite nothing.
 - If the sources answer only part of the question, answer that part and say what is missing.
 - Be concise and specific: include the numbers, names and definitions the sources give.
 - Write any mathematical notation in LaTeX between $...$ (inline) or $$...$$ (on its own line), for example $p(y_i \\mid x, y_{{1:i-1}})$.

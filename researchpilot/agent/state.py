@@ -31,6 +31,7 @@ class ResearchState(TypedDict, total=False):
     new_queries: list[str]
     needs_web: bool
     evidence: list[Source]
+    unreadable: list[str]  # titles of retrieved passages dropped because their text is garbled
     round: int
     sufficient: bool
     verdict: str | None  # the grader's "sufficient" | "retry" | "out_of_scope" (None: none or malformed)

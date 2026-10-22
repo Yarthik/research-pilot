@@ -229,10 +229,14 @@ def test_pdf_links_open_arxiv_papers_at_the_cited_page():
 
 # --------------------------------------------------------------------------- ui-v3 text pieces
 def test_steps_summary_and_questions_left_read_naturally():
-    from render import questions_left, steps_summary
+    from render import NBSP, questions_left, steps_summary
 
-    assert steps_summary({"round": 1, "evidence_count": 5, "seconds": 4.4}) == "Searched 1 round · 5 passages · 4.4 s"
-    assert steps_summary({"round": 2, "evidence_count": 1, "seconds": 9}) == "Searched 2 rounds · 1 passage · 9 s"
+    summary = steps_summary({"round": 1, "evidence_count": 5, "seconds": 4.4})
+    assert summary.replace(NBSP, " ") == "Searched 1 round · 5 passages · 4.4 s"
+    assert summary.split(" · ")[0] == f"Searched{NBSP}1{NBSP}round"  # a narrow screen wraps only between parts
+    assert steps_summary({"round": 2, "evidence_count": 1, "seconds": 9}).replace(NBSP, " ") == (
+        "Searched 2 rounds · 1 passage · 9 s"
+    )
     assert [questions_left(n) for n in (4, 1, 0, -1)] == [
         "4 questions left",
         "1 question left",
@@ -364,7 +368,51 @@ def test_steps_for_follow_ups_vague_questions_and_out_of_scope():
     assert next_activity(out) == "Writing the answer…"
     assert next_activity({"step": "condense"}) == "Planning the searches…"
     assert next_activity({"step": "clarify"}) is None
-    assert steps_summary({"clarification": True, "round": 0, "seconds": 0.01}) == "No search needed · 0 s"
+    assert steps_summary({"clarification": True, "round": 0, "seconds": 0.01}) == "No search needed"
+
+
+def test_indexing_is_its_own_step_and_not_part_of_the_answer_time():
+    from render import NBSP, describe_step, indexing_activity, steps_summary
+
+    result = {"round": 2, "evidence_count": 7, "seconds": 7.94, "indexing": {"seconds": 31.2, "files": 1}}
+    assert steps_summary(result).replace(NBSP, " ") == "Indexed your file in 31.2 s · searched 2 rounds · 7.9 s"
+    two = steps_summary(dict(result, indexing={"seconds": 40, "files": 2}))
+    assert two.replace(NBSP, " ").startswith("Indexed your files in 40 s")
+    doc = {"source": "report.pdf", "title": "Annual report: 2025", "pages": 50}
+    assert indexing_activity(doc) == "Indexing your file: 50 pages…"
+    assert indexing_activity(doc, 2, 2) == "Indexing Annual report (2 of 2): 50 pages…"
+    assert indexing_activity({"source": "notes.txt", "title": "notes", "pages": 1}) == "Indexing your file…"
+    step = {"step": "index", "title": "Annual report: 2025", "pages": 50, "seconds": 31.04}
+    assert describe_step(step) == "Indexed your file Annual report: 50 pages (31 s)"
+
+
+def test_instant_steps_show_no_time_and_dropped_passages_are_reported():
+    from render import describe_step
+
+    assert describe_step({"step": "plan", "queries": ["q"], "seconds": 0.04}) == "Planned 1 search: q"
+    assert describe_step({"step": "plan", "queries": ["q"], "seconds": 0.05}) == "Planned 1 search: q (0.1 s)"
+    found = {"step": "retrieve", "round": 1, "new_chunks": 2, "unreadable": 3, "evidence": 2, "seconds": 0}
+    assert describe_step(found) == "Search round 1: found 2 new passages, skipped 3 unreadable passages; 2 in use"
+    cut = {"step": "generate", "sources": 5, "cited": [1], "unsupported": [{"n": 4, "sentence": "x"}], "seconds": 2}
+    assert (
+        describe_step(cut)
+        == "Wrote the answer from 5 passages, citing 1; removed 1 citation the passages don't support (2 s)"
+    )
+    assert "can't be read" in describe_step({"step": "generate", "unreadable": True, "sources": 0, "seconds": 0})
+    assert "instead of guessing" in describe_step({"step": "generate", "abstained_unsupported": True, "seconds": 1})
+
+
+def test_a_file_that_isnt_english_gets_a_notice():
+    from render import NOT_ENGLISH, language_note
+
+    german = {"title": "Zebras", "english": False}
+    report = {"title": "Annual report: 2025", "english": True}
+    assert NOT_ENGLISH == "ResearchPilot is tuned for English; answers about this document may be less reliable."
+    assert language_note([german]) == NOT_ENGLISH
+    assert language_note([report]) is None and language_note([{"title": "old upload"}]) is None
+    assert language_note([report, german]) == (
+        "Zebras: ResearchPilot is tuned for English; answers about it may be less reliable."
+    )
 
 
 def test_file_chips_and_notices_say_how_much_of_a_long_file_was_indexed():
@@ -385,3 +433,4 @@ def test_how_it_works_mentions_follow_ups_and_stopping_early():
 
     text = how_it_works({"hybrid": "Hybrid"}, {"hybrid": "both"}, "hybrid", 2)
     assert "**Follow-up questions**" in text and "stops early" in text
+    assert "**English only, for now**" in text

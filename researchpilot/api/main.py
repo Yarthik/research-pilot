@@ -148,7 +148,7 @@ def create_app() -> FastAPI:
         dependencies=[Depends(require_api_key), Depends(require_ingest_allowed)],
     )
     def ingest_files(files: list[UploadFile] = File(...)) -> dict:
-        from ..ingestion.loaders import Document, load_pdf_bytes
+        from ..ingestion.loaders import Document, decode_text, load_pdf_bytes
         from ..ingestion.pipeline import ingest_document
 
         limit = get_settings().max_upload_mb * 1024 * 1024
@@ -165,7 +165,7 @@ def create_app() -> FastAPI:
                 if suffix == ".pdf":
                     doc = load_pdf_bytes(data, name)
                 else:
-                    doc = Document(source=name, title=Path(name).stem, pages=[(None, data.decode("utf-8", "replace"))])
+                    doc = Document(source=name, title=Path(name).stem, pages=[(None, decode_text(data))])
                 report["ingested"].append(ingest_document(doc, refresh=False))
             except Exception as exc:
                 report["failed"].append({"source": name, "error": str(exc)})

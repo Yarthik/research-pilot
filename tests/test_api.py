@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from researchpilot.config import reset_settings  # noqa: E402
 
 PLAN = {"sub_queries": ["LoRA"], "needs_web": False}
-ANSWER = {"answer": "LoRA uses rank decomposition matrices [1].", "cited_sources": [1]}
+ANSWER = {"answer": "LoRA trains a small number of parameters [1].", "cited_sources": [1]}
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ def test_ask(client):
     response = client.post("/ask", json={"question": "How does LoRA work?"})
     assert response.status_code == 200
     body = response.json()
-    assert body["answer"].startswith("LoRA uses")
+    assert body["answer"].startswith("LoRA trains")
     assert body["citations"][0]["n"] == 1
     assert [s["step"] for s in body["trace"]] == ["plan", "retrieve", "grade", "generate"]
 

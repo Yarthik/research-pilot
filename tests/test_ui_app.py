@@ -204,7 +204,8 @@ def test_answer_shows_collapsed_steps_chips_and_source_cards(loaded_retriever, f
     at.chat_input[0].set_value("How does LoRA work?").run()
     assert not at.exception
     (status,) = [s for s in at.status if s.label.startswith("Searched")]
-    assert status.label.startswith("Searched 1 round · ") and " passages · " in status.label  # singular/plural
+    label = status.label.replace(chr(0xA0), " ")
+    assert label.startswith("Searched 1 round · ") and " passages · " in label  # singular/plural
     assert any("Planned 1 search: LoRA rank decomposition" in m.value for m in status.markdown)
     answer = next(m.value for m in at.markdown if "LoRA injects" in m.value)
     assert '<a class="rp-cite" href="#m1-1"' in answer  # the [1] marker is a chip linking to its source card
@@ -306,7 +307,12 @@ def test_source_cards_are_in_citation_order(loaded_retriever, fake_llm, monkeypa
     fake_llm.responses = {
         "ResearchPlan": [PLAN],
         "ContextGrade": [{"verdict": "sufficient"}],
-        "Answer": [{"answer": "Frozen weights [2]. Low-rank matrices [1].", "cited_sources": [2, 1]}],
+        "Answer": [
+            {
+                "answer": "LoRA has few trainable parameters [2]. LoRA trains low-rank matrices [1].",
+                "cited_sources": [2, 1],
+            }
+        ],
     }
     at = _app(monkeypatch).run()
     at.chat_input[0].set_value("How does LoRA work?").run()
@@ -496,3 +502,65 @@ def test_files_stay_new_when_their_question_fails(loaded_retriever, fake_llm, mo
     _queue_submission(monkeypatch, "Why do zebras migrate?", [("zebras.txt", ZEBRAS)])
     at.run()
     assert at.warning and at.session_state["fresh"] == ["zebras.txt"]  # asked again, it still means this file
+
+
+def test_a_file_whose_text_cant_be_read_holds_the_question_back(loaded_retriever, fake_llm, monkeypatch):
+    from tests.test_config_and_loaders import make_pdf
+    from tests.test_quality import HINDI, legacy_font
+
+    at = _session_app(monkeypatch, "alice", DEMO_MAX_QUESTIONS="3")
+    _queue_submission(monkeypatch, "What is this text about?", [("durga.pdf", make_pdf([legacy_font(HINDI)]))])
+    at.run()
+    assert not at.exception and not fake_llm.calls
+    assert at.session_state["questions_asked"] == 0 and not at.session_state["messages"]  # not sent, not counted
+    (error,) = at.error
+    assert error.value.startswith(
+        "durga.pdf's text can't be read: the PDF stores its text in a non-standard font encoding or as images."
+    )
+    assert "still in the message box" in error.value
+    assert at.chat_input[0].proto.value == "What is this text about?"
+    assert not [b for b in at.button if b.key and b.key.startswith("rm-")]  # nothing was attached
+
+
+def test_indexing_a_file_sent_with_a_question_is_its_own_step(loaded_retriever, fake_llm, monkeypatch):
+    from render import NOT_ENGLISH
+
+    from tests.test_quality import GERMAN
+
+    fake_llm.responses = {
+        "ResearchPlan": [{"sub_queries": ["Würde Rechte"], "needs_web": False}],
+        "ContextGrade": [{"verdict": "sufficient"}],
+        "Answer": [{"answer": "Alle Menschen sind frei und gleich an Würde [1].", "cited_sources": [1]}],
+    }
+    at = _session_app(monkeypatch, "alice")
+    _queue_submission(monkeypatch, "Was sagt der Text über Würde?", [("rechte.txt", GERMAN.encode())])
+    at.run()
+    assert not at.exception
+    (status,) = [s for s in at.status if s.label.startswith("Indexed")]
+    label = status.label.replace(chr(0xA0), " ")
+    assert label.startswith("Indexed your file in ") and " · searched 1 round · " in label
+    steps = [m.value for m in status.markdown]
+    assert steps[0].startswith(":material/upload_file: Indexed your file rechte")  # the first step
+    assert at.button(key="rm-rechte.txt")  # attached
+    assert any(c.value.endswith(NOT_ENGLISH) for c in at.caption)  # the notice beside the chip
+
+
+def test_a_file_that_fails_to_index_after_sending_puts_the_question_back(loaded_retriever, fake_llm, monkeypatch):
+    import sys
+
+    sys.path.insert(0, str(APP.parent))
+    import backend
+
+    from researchpilot.retrieval.session import SessionsFull
+
+    def full(self, owner, prepared):
+        raise SessionsFull("Private uploads are at capacity right now.")
+
+    monkeypatch.setattr(backend.LocalBackend, "index_session_file", full)
+    at = _session_app(monkeypatch, "alice", DEMO_MAX_QUESTIONS="3")
+    _queue_submission(monkeypatch, "Why do zebras migrate?", [("zebras.txt", ZEBRAS)])
+    at.run()
+    assert not at.exception and not fake_llm.calls
+    assert at.session_state["questions_asked"] == 0 and not at.session_state["messages"]
+    assert at.error[0].value.startswith("Private uploads are at capacity right now.")
+    assert at.chat_input[0].proto.value == "Why do zebras migrate?"

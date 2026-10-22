@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterable
 
 from ..config import get_settings
 from ..retrieval import hybrid
+from . import quality
 from .chunking import chunk_document
 from .loaders import Document, LoaderError, load_source
 
@@ -14,8 +15,15 @@ log = logging.getLogger(__name__)
 ProgressCallback = Callable[[str, int, int], None]  # (source, index, total)
 
 
+UNREADABLE = "its text can't be read: it is stored in a non-standard font encoding or as images"
+
+
 def ingest_document(doc: Document, refresh: bool = True) -> dict:
-    """Chunk, embed and store one already-loaded document. Re-ingesting a source replaces it."""
+    """Chunk, embed and store one already-loaded document. Re-ingesting a source replaces it.
+
+    A document whose text is mojibake (a PDF in a legacy font) is refused; one in another language is
+    stored, and `english` in the result is False (see ingestion/quality.py).
+    """
     from ..retrieval import embeddings
 
     settings = get_settings()
@@ -23,11 +31,23 @@ def ingest_document(doc: Document, refresh: bool = True) -> dict:
     chunks = chunk_document(doc, settings.chunk_size, settings.chunk_overlap)
     if not chunks:
         raise LoaderError("no extractable text (scanned PDFs need OCR first)")
+    check = quality.assess(doc.text)
+    if not check.readable:
+        log.info("refused %s: unreadable text layer %s", doc.source, check.stats)
+        raise LoaderError(UNREADABLE)
+    if not check.english:
+        log.warning("%s doesn't look like English; ResearchPilot is tuned for English", doc.source)
     retriever.store.delete_source(doc.source)
     retriever.store.add(chunks, embeddings.embed_texts([c.text for c in chunks]))
     if refresh:
         retriever.refresh()
-    return {"source": doc.source, "title": doc.title, "chunks": len(chunks), "pages": len(doc.pages)}
+    return {
+        "source": doc.source,
+        "title": doc.title,
+        "chunks": len(chunks),
+        "pages": len(doc.pages),
+        "english": check.english,
+    }
 
 
 def ingest(sources: Iterable[str], on_progress: ProgressCallback | None = None) -> dict:

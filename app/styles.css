@@ -13,6 +13,7 @@
   --rp-width: 760px;               /* the reading column */
   --rp-empty-width: 640px;         /* the empty state's group */
   --rp-tooltip-width: 320px;       /* help tooltips: narrow enough not to cover the reading column */
+  --rp-top: var(--rp-s7);          /* space above the page's content; more on phones (the sidebar button) */
 }
 :root {
   /* Derived from the current text colour, so one rule works in light and dark (see ui.py). On :root, not
@@ -34,30 +35,43 @@
 [data-testid="stAppDeployButton"], [data-testid="stToolbarActions"], footer { display: none !important; }
 header[data-testid="stHeader"], [data-testid="stToolbar"] { background: transparent; }
 header[data-testid="stHeader"] { height: 2.5rem; }
-/* Narrow screens, where the reading column reaches the left edge: the transparent header would float the
-   sidebar toggle (») over the text as it scrolls by ("Lo»RA"). The header shrinks to a solid chip around it
-   instead: the page background, a hairline border, a 44 px tap target, clear of a notch. Streamlit has no
-   variable for the page background, so the header's ancestors pass it down with `inherit` (they paint the
-   colour they already sit on). Only while the toggle is there: an open sidebar has its own close button.
-   Wider than 820 px the column (760 px + padding) never reaches the toggle, so a desktop (a fine pointer)
-   is unchanged; a touch screen gets the chip at any width, for the tap target (phones in landscape). */
+/* Narrow and touch screens, where the reading column reaches the left edge: a transparent header would float the
+   sidebar toggle (») over the text as it scrolls by ("Lo»RA"). The toggle becomes a small round button of its
+   own, frosted (the page colour at 80% over a blur of what is behind it), so it reads over any text in either
+   theme. Only the button is styled: the header strip around it stays transparent and lets taps through, so
+   whatever else a host puts in the header can never become a box over the page. The page starts below the
+   button (--rp-top), so nothing is under it at the top of the page.
+   Streamlit has no variable for the page colour, but .stApp sets color-scheme to the theme, so light-dark()
+   picks Streamlit's two default backgrounds (Canvas, the browser's page colour, where it isn't supported).
+   Wider than 820 px with a mouse, the column never reaches the toggle, so a desktop is unchanged. */
 @media (max-width: 820px), (pointer: coarse) {
-  .stApp :has(header[data-testid="stHeader"]) { background-color: inherit; }
-  header[data-testid="stHeader"]:has([data-testid="stExpandSidebarButton"]) {
-    top: max(var(--rp-s2), env(safe-area-inset-top)); left: max(var(--rp-s2), env(safe-area-inset-left));
-    right: auto; width: auto; height: auto; min-height: 0;
-    background-color: inherit; border: 1px solid var(--rp-border-strong); border-radius: var(--rp-radius-sm);
+  :root { --rp-top: calc(56px + env(safe-area-inset-top, 0px)); }  /* 8 above the button + 40 + 8 below */
+  header[data-testid="stHeader"] { pointer-events: none; }
+  [data-testid="stExpandSidebarButton"], [data-testid="stExpandSidebarButton"]:hover {
+    pointer-events: auto; position: fixed; z-index: 1;
+    top: calc(var(--rp-s2) + env(safe-area-inset-top, 0px)); left: calc(var(--rp-s2) + env(safe-area-inset-left, 0px));
+    width: 40px; height: 40px; min-height: 0; padding: 0; margin: 0; border-radius: 50%;
+    border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+    background-color: color-mix(in srgb, Canvas 80%, transparent);
+    background-color: color-mix(in srgb, light-dark(#ffffff, #0e1117) 80%, transparent);
+    -webkit-backdrop-filter: blur(12px) saturate(1.5); backdrop-filter: blur(12px) saturate(1.5);
   }
-  header[data-testid="stHeader"]:has([data-testid="stExpandSidebarButton"]) [data-testid="stToolbar"],
-  header[data-testid="stHeader"]:has([data-testid="stExpandSidebarButton"]) [data-testid="stToolbar"] div {
-    position: static; width: auto; height: auto; min-height: 0; padding: 0; margin: 0; background: transparent;
-  }
-  [data-testid="stExpandSidebarButton"] { width: 44px; height: 44px; margin: 0; border-radius: var(--rp-radius-sm); }
+  [data-testid="stExpandSidebarButton"]:active { background-color: color-mix(in srgb, currentColor 10%, transparent); }
+  /* The header sits above Streamlit's dialogs, so the button would float over a dialog's dimmed backdrop as a live
+     control; the page behind a dialog is inert, so the button goes while one is open. */
+  :root:has([data-testid="stDialog"]) [data-testid="stExpandSidebarButton"] { visibility: hidden; }
+  /* The tap target is 44 px across; the circle is 40. */
+  [data-testid="stExpandSidebarButton"]::after { content: ""; position: absolute; inset: -3px; border-radius: 50%; }
 }
 
 /* =========================================================================== base
    Note: color-mix(currentColor) is set on one element and inherited, never on a parent and its child,
    or the colour would be muted twice. */
+/* Hover effects are only for devices that can hover (a mouse): a touch screen keeps :hover on the last thing
+   tapped, so a tapped link stayed underlined. Each element below has a :hover rule for every device that keeps
+   its resting look (overriding Streamlit's own hover colours too), and its hover effect inside
+   @media (hover: hover), at the same specificity, so a desktop looks exactly as before. */
 .stApp a:focus-visible, .stApp button:focus-visible, .stApp summary:focus-visible,
 .stApp [role="button"]:focus-visible {
   outline: 2px solid var(--rp-accent) !important; outline-offset: 2px;
@@ -77,14 +91,14 @@ header[data-testid="stHeader"] { height: 2.5rem; }
 
 /* =========================================================================== layout
    One reading column for messages and the pinned composer; full width on phones. */
-[data-testid="stMainBlockContainer"] { max-width: var(--rp-width); padding: var(--rp-s7) var(--rp-s5) var(--rp-s5); }
+[data-testid="stMainBlockContainer"] { max-width: var(--rp-width); padding: var(--rp-top) var(--rp-s5) var(--rp-s5); }
 [data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"] { gap: var(--rp-s3); }
 [data-testid="stBottomBlockContainer"] {
   max-width: var(--rp-width); padding: var(--rp-s2) var(--rp-s5) var(--rp-s4);
 }
 [data-testid="stBottomBlockContainer"] [data-testid="stVerticalBlock"] { gap: var(--rp-s2); }
 @media (max-width: 640px) {
-  [data-testid="stMainBlockContainer"] { padding: var(--rp-s7) var(--rp-s4) var(--rp-s4); }
+  [data-testid="stMainBlockContainer"] { padding: var(--rp-top) var(--rp-s4) var(--rp-s4); }
   [data-testid="stBottomBlockContainer"] { padding: var(--rp-s2) var(--rp-s4) var(--rp-s3); }
 }
 
@@ -92,12 +106,16 @@ header[data-testid="stHeader"] { height: 2.5rem; }
    One group, centred vertically while it is on the page. */
 [data-testid="stMainBlockContainer"]:has(.st-key-rp-empty),
 [data-testid="stMainBlockContainer"]:has(.st-key-rp-setup) {
-  min-height: 100dvh; display: flex; flex-direction: column; justify-content: center;
-  padding-top: var(--rp-s7); padding-bottom: var(--rp-s6);
+  min-height: 100dvh; flex-shrink: 0; display: flex; flex-direction: column; justify-content: center;
+  padding-top: var(--rp-top); padding-bottom: var(--rp-s6);
 }
-/* The block inside the column stretches to full height (flex: 1), so it centres its content too. */
+/* The block inside the column stretches to full height, so it centres its content too. Streamlit's flex: 1 has a
+   zero basis, so on a short screen (320 x 568) the block shrank below its content and centring pushed the heading
+   above the top, out of reach; with an automatic basis it is never shorter than its content, and the page scrolls. */
 [data-testid="stMainBlockContainer"]:has(.st-key-rp-empty) > [data-testid="stVerticalBlock"],
-[data-testid="stMainBlockContainer"]:has(.st-key-rp-setup) > [data-testid="stVerticalBlock"] { justify-content: center; }
+[data-testid="stMainBlockContainer"]:has(.st-key-rp-setup) > [data-testid="stVerticalBlock"] {
+  flex: 1 0 auto; justify-content: center;
+}
 .st-key-rp-empty { width: 100%; max-width: var(--rp-empty-width); margin: 0 auto; gap: var(--rp-s4) !important; }
 .st-key-rp-hero { gap: 0 !important; margin-bottom: var(--rp-s3); }
 .st-key-rp-hero [data-testid="stElementContainer"] { width: 100%; }
@@ -121,8 +139,18 @@ header[data-testid="stHeader"] { height: 2.5rem; }
 .st-key-rp-suggest [data-testid="stElementContainer"] + [data-testid="stElementContainer"] button {
   border-top: 1px solid var(--rp-border); border-radius: 0;
 }
-.st-key-rp-suggest button:hover, .st-key-rp-suggest button:focus-visible {
+.st-key-rp-suggest button:hover { color: inherit; }
+.st-key-rp-suggest [data-testid="stElementContainer"] + [data-testid="stElementContainer"] button:hover {
+  border-top-color: var(--rp-border);
+}
+.st-key-rp-suggest button:focus-visible {
   background: var(--rp-tint-strong); color: inherit; border-radius: var(--rp-radius-sm); border-top-color: transparent;
+}
+@media (hover: hover) {
+  .st-key-rp-suggest button:hover,
+  .st-key-rp-suggest [data-testid="stElementContainer"] + [data-testid="stElementContainer"] button:hover {
+    background: var(--rp-tint-strong); border-radius: var(--rp-radius-sm); border-top-color: transparent;
+  }
 }
 .st-key-rp-suggest button:active { background: var(--rp-accent-tint); color: inherit; }
 .st-key-rp-suggest button > div, .st-key-rp-suggest button span { justify-content: flex-start; text-align: left; width: 100%; }
@@ -149,7 +177,8 @@ header[data-testid="stHeader"] { height: 2.5rem; }
 .st-key-rp-meta button, .st-key-rp-meta button *, .st-key-rp-meta [data-testid="stCaptionContainer"] p { line-height: 1.5 !important; }
 .st-key-rp-meta button { min-height: 0; padding: 0; font-size: var(--rp-fs-meta); color: var(--rp-accent-text); }
 .st-key-rp-meta button p { font-size: var(--rp-fs-meta); font-weight: 500; }
-.st-key-rp-meta button:hover { color: var(--rp-accent-text); text-decoration: underline; }
+.st-key-rp-meta button:hover { color: var(--rp-accent-text); }
+@media (hover: hover) { .st-key-rp-meta button:hover { text-decoration: underline; } }
 .st-key-rp-meta [data-testid="stElementContainer"] { width: auto !important; flex: 0 0 auto; }
 .st-key-rp-meta [data-testid="stElementContainer"]:has([data-testid="stCaptionContainer"]) { margin-left: auto; }
 /* Attached files: small removable chips. */
@@ -160,7 +189,8 @@ header[data-testid="stHeader"] { height: 2.5rem; }
 }
 .st-key-rp-files button p { font-size: var(--rp-fs-small); }
 .st-key-rp-files button [data-testid="stIconMaterial"] { font-size: 14px; color: var(--rp-muted); }
-.st-key-rp-files button:hover { border-color: var(--rp-accent); color: inherit; }
+.st-key-rp-files button:hover { border-color: var(--rp-border-strong); color: inherit; }
+@media (hover: hover) { .st-key-rp-files button:hover { border-color: var(--rp-accent); } }
 
 /* =========================================================================== messages
    No avatars; the user's message is a right-aligned bubble, the answer sits at the text edge. */
@@ -179,7 +209,8 @@ header[data-testid="stHeader"] { height: 2.5rem; }
 [class*="st-key-rp-steps"] summary {
   padding: var(--rp-s1) 0; width: fit-content; background: transparent !important; color: var(--rp-muted);
 }
-[class*="st-key-rp-steps"] summary:hover { color: inherit; }
+[class*="st-key-rp-steps"] summary:hover { color: var(--rp-muted); }
+@media (hover: hover) { [class*="st-key-rp-steps"] summary:hover { color: inherit; } }
 [class*="st-key-rp-steps"] summary p { font-size: var(--rp-fs-small); }
 [class*="st-key-rp-steps"] summary [data-testid^="stExpanderIcon"] { font-size: 16px; }
 [class*="st-key-rp-steps"] [data-testid="stExpanderDetails"] {
@@ -196,7 +227,7 @@ a.rp-cite {
   font-size: var(--rp-fs-meta); font-weight: 600; line-height: 1.5; text-align: center; vertical-align: 0.1em;
   color: inherit !important; text-decoration: none !important; background: var(--rp-accent-tint);
 }
-a.rp-cite:hover { background: var(--rp-accent); color: #fff !important; }
+@media (hover: hover) { a.rp-cite:hover { background: var(--rp-accent); color: #fff !important; } }
 
 /* Sources: a two-column grid of compact cards (one column under 640 px, Streamlit's breakpoint). */
 .rp-label + * { margin-top: 0; }
@@ -210,7 +241,8 @@ a.rp-cite:hover { background: var(--rp-accent); color: #fff !important; }
   border: 1px solid var(--rp-border-strong); border-radius: var(--rp-radius); background: transparent; color: inherit;
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
-[class*="st-key-src-"] button:hover { border-color: var(--rp-accent); background: var(--rp-tint); color: inherit; }
+[class*="st-key-src-"] button:hover { border-color: var(--rp-border-strong); background: transparent; color: inherit; }
+@media (hover: hover) { [class*="st-key-src-"] button:hover { border-color: var(--rp-accent); background: var(--rp-tint); } }
 [class*="st-key-rp-src-"]:has(.rp-anchor:target) [class*="st-key-src-"] button { border-color: var(--rp-accent); box-shadow: var(--rp-ring); }
 [class*="st-key-src-"] button > div, [class*="st-key-src-"] button span { display: block; width: 100%; text-align: left; }
 [class*="st-key-src-"] button p {
@@ -265,7 +297,8 @@ a.rp-cite:hover { background: var(--rp-accent); color: #fff !important; }
 }
 .st-key-rp-new-chat button p { font-size: var(--rp-fs-small); font-weight: 500; }
 .st-key-rp-new-chat button > div { justify-content: flex-start; }
-.st-key-rp-new-chat button:hover { border-color: var(--rp-accent); color: inherit; }
+.st-key-rp-new-chat button:hover { border-color: var(--rp-border-strong); color: inherit; }
+@media (hover: hover) { .st-key-rp-new-chat button:hover { border-color: var(--rp-accent); } }
 /* Disabled until a chat exists: quieter, but still readable (muted text, 4.9:1 or more). */
 .st-key-rp-new-chat button:disabled { opacity: 1; color: var(--rp-muted); border-color: var(--rp-border); background: transparent; }
 .st-key-rp-new-chat button:disabled p, .st-key-rp-new-chat button:disabled [data-testid="stIconMaterial"] { color: inherit; }
@@ -282,8 +315,10 @@ a.rp-cite:hover { background: var(--rp-accent); color: #fff !important; }
 .rp-doc-x { margin-left: auto; padding-left: var(--rp-s1); }
 .rp-doc-t { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rp-doc-x { flex: none; font-size: var(--rp-fs-meta); color: var(--rp-muted); }
-.rp-docs a:hover .rp-doc-t { text-decoration: underline; }
-.rp-docs a:hover .rp-doc-x { color: var(--rp-accent-text); }
+@media (hover: hover) {
+  .rp-docs a:hover .rp-doc-t { text-decoration: underline; }
+  .rp-docs a:hover .rp-doc-x { color: var(--rp-accent-text); }
+}
 [data-testid="stSidebar"] [data-testid="stCaptionContainer"]:last-of-type { margin-top: var(--rp-s2); }
 
 /* =========================================================================== first start */

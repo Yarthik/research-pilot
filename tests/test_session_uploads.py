@@ -261,3 +261,46 @@ def test_the_process_registry_has_a_background_cleanup_thread(monkeypatch):
     first = session_module.get_registry()
     assert session_module.get_registry() is first
     assert started == ["session-uploads-cleanup"]
+
+
+# --------------------------------------------------------------------------- text that can't be read, other languages
+def test_a_file_whose_text_is_mojibake_is_refused(registry):
+    from tests.test_quality import HINDI, LETTER_SOUP, legacy_font
+
+    garbled_pdf = make_pdf([legacy_font(HINDI)])  # a font without a Unicode map: arbitrary characters
+    with pytest.raises(SessionUploadError) as refused:
+        registry.add_file("alice", "durga.pdf", garbled_pdf)
+    assert str(refused.value) == (
+        "durga.pdf's text can't be read: the PDF stores its text in a non-standard font encoding or as images."
+    )
+    with pytest.raises(SessionUploadError, match="notes.txt's text can't be read"):
+        registry.add_file("alice", "notes.txt", LETTER_SOUP.encode())
+    assert registry.documents("alice") == []
+
+
+def test_a_file_in_another_language_is_indexed_and_flagged(registry, loaded_retriever):
+    from tests.test_quality import GERMAN, HINDI
+
+    assert registry.add_file("alice", "rechte.txt", GERMAN.encode("cp1252"))["english"] is False  # a Windows file
+    assert registry.add_file("alice", "adhikar.txt", HINDI.encode("utf-8"))["english"] is False
+    assert {d["source"]: d["english"] for d in registry.documents("alice")} == {
+        "adhikar.txt": False,
+        "rechte.txt": False,
+    }
+    alice = registry.retriever("alice", loaded_retriever)
+    assert "rechte.txt" in _sources(alice.retrieve("Würde Rechten Menschen", mode="bm25"))  # searchable
+    assert "Würde" in next(c.text for c in alice.docs.chunks if c.source == "rechte.txt")  # decoded, not U+FFFD
+    assert registry.add_file("bob", "zebras.txt", ALICE_TEXT)["english"] is True
+
+
+def test_preparing_checks_a_whole_batch_before_anything_is_embedded(registry):
+    embedded = []
+    registry._embed = lambda texts: embedded.append(texts) or [[1.0] + [0.0] * 255 for _ in texts]
+    registry.add_file("alice", "one.txt", ALICE_TEXT)
+    embedded.clear()
+    results = registry.prepare_files("alice", [("two.txt", BOB_TEXT), ("three.txt", b"Three"), ("bad.pptx", b"x")])
+    assert [type(r).__name__ for r in results] == ["PreparedFile", "SessionUploadError", "SessionUploadError"]
+    assert "up to 2 files" in str(results[1])  # the batch's first file takes the last slot
+    assert not embedded and [d["source"] for d in registry.documents("alice")] == ["one.txt"]  # nothing added yet
+    assert registry.index("alice", results[0])["source"] == "two.txt"
+    assert len(embedded) == 1 and len(registry.documents("alice")) == 2

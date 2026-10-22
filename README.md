@@ -6,13 +6,15 @@
 
 **An agentic research assistant over your own documents.** Ingest PDFs and web pages, ask questions, and get answers with inline citations. A LangGraph agent plans its searches, checks whether what it found is enough, and searches again when it isn't.
 
+**English only, for now.** The embedding model and the keyword search are English, so a document in another language is indexed with a warning that answers may be less reliable, and a PDF whose text can't be read (a legacy font, or scanned pages) is refused rather than searched as gibberish.
+
 **Live demo: [research-pilot-yarthik.streamlit.app](https://research-pilot-yarthik.streamlit.app/)** (if it has been asleep, waking it and loading the papers takes a few minutes) · **API docs:** `/docs` on any running API
 
 ## Highlights
 
 - **Self-correcting LangGraph agent**: plan → retrieve → grade → (retrieve again | answer), with a full step trace streamed to the UI; follow-up questions are rewritten from the chat history first, and a search that can't help is not repeated
 - **Hybrid retrieval**: BM25 (implemented from scratch) + dense vectors (ChromaDB), merged with Reciprocal Rank Fusion; optional cross-encoder reranking, benchmarked against plain fusion
-- **Grounded answers**: structured output, inline citations validated against the sources, and an explicit "not in the documents" path
+- **Grounded answers**: structured output, inline citations validated against the sources and checked against the words of the passage they cite, unreadable passages kept away from the model, and an explicit "not in the documents" path
 - **Evaluation harness**: retrieval benchmark across four retrieval modes, and LLM-judged correctness, faithfulness, abstention and a retry ablation, written straight into this README
 - **Production shape**: FastAPI service (streaming endpoint, API-key auth, read-only mode), Streamlit UI, Docker + compose, free hosting on Streamlit Community Cloud, GitHub Actions CI
 - **Any LLM**: Groq, OpenAI, Anthropic, Google or local Ollama through one setting; embeddings and reranking run locally on CPU for free
@@ -31,7 +33,7 @@ flowchart LR
     A --> O([Answer + sources + trace])
 ```
 
-**Ingestion:** `PDF / URL / text → extraction (pypdf, trafilatura) → sentence-aware chunking with overlap, page numbers kept → local embeddings (bge-small) → ChromaDB + BM25 index`
+**Ingestion:** `PDF / URL / text → extraction (pypdf, trafilatura) → text check (unreadable text refused, other languages flagged) → sentence-aware chunking with overlap, page numbers kept → local embeddings (bge-small) → ChromaDB + BM25 index`
 
 **Retrieval modes** (selectable per request): `vector`, `bm25`, `hybrid` (RRF, default), `hybrid_rerank` (RRF + cross-encoder).
 
@@ -81,7 +83,7 @@ generate: sources=10, cited=[1, 2, 6, 7]
 streamlit run app/streamlit_app.py        # http://localhost:8501
 ```
 
-Chat with your documents, watch the agent's steps live, click a citation or source card to read the exact passage and open the PDF at that page, switch retrieval methods, and (when the library is editable) upload PDFs or add URLs from the sidebar. Follow-up questions ("How much memory does it save?") work across the last few turns. On a read-only public demo, `ALLOW_SESSION_UPLOADS=true` lets each visitor attach up to two private files in the message box that only their own browser session can search; "What is it about?" right after attaching one searches only that file ([details](docs/DEPLOY.md#private-uploads-allow_session_uploads)).
+Chat with your documents, watch the agent's steps live, click a citation or source card to read the exact passage and open the PDF at that page, switch retrieval methods, and (when the library is editable) upload PDFs or add URLs from the sidebar. Follow-up questions ("How much memory does it save?") work across the last few turns. On a read-only public demo, `ALLOW_SESSION_UPLOADS=true` lets each visitor attach up to two private files in the message box that only their own browser session can search; "What is it about?" right after attaching one searches only that file ([details](docs/DEPLOY.md#private-uploads-allow_session_uploads)). A file sent with a question is indexed as a step of its own, with its own time, so the answer's time is only the answer's.
 
 ### API
 
@@ -209,7 +211,8 @@ Example models: OpenAI `gpt-4o-mini`, Anthropic `claude-haiku-4-5-20251001`, Oll
 - **Sized for a small host.** Profiling a cold start on the real Streamlit server showed 3.2 GB of memory, over the ~2.7 GB free-hosting limit. The cause was ONNX Runtime: embedding in batches of 64 peaked near 2 GB and the allocator never gave it back. Batches of 8 produce bit-identical vectors, peak at about 0.5 GB, and cut the cold-start ingest from 145 s to 91 s; the whole app now peaks at about 0.7 GB (0.95 GB with the reranker switched on). A test pins the batch sizes.
 - **Private uploads without touching the shared index.** Each visitor's files get a small in-memory index of their own (vectors, plus BM25 over the shared papers and their files), searched alongside the shared ChromaDB collection with the same modes and RRF. An owner field with filtered search over one shared collection would have been the obvious alternative, but the shared index would no longer be read-only, approximate (HNSW) search over a graph full of other visitors' chunks could reorder shared results, and BM25 statistics computed over everyone's files would let one visitor's uploads shift another's scores. Here isolation depends on what a session's retriever can reach, not on remembering a filter; a session without uploads searches exactly as before (the retrieval eval is unchanged), and tests check in every mode that one session never retrieves another's chunks.
 - **Graceful degradation.** If a model fails structured output, each step has a fallback (raw question as the query, plain-text answer). Configuration problems such as a missing API key, and provider rate limits or quota, are the exception: retrying or guessing can't help, so they surface as a clear error instead of a degraded answer. The UI turns a rate limit into a friendly "try again later" message and the API returns a 429.
-- **Citations are checked, not trusted.** Citation numbers are parsed from the answer text (`[1]`, `[2][3]`, `[1, 4]`, `[2-4]`) and validated against the evidence list; invalid ones are reported in the trace and counted by the eval.
+- **Citations are checked, not trusted.** Citation numbers are parsed from the answer text (`[1]`, `[2][3]`, `[1, 4]`, `[2-4]`) and validated against the evidence list; invalid ones are reported in the trace and counted by the eval. Each citation must also share words with the sentence it's attached to: a marker whose passage shares none is removed, a sentence left with no supported citation goes, and an answer with nothing supported left becomes "the passages don't state it". The check is lenient (two shared content words, word stems count), so it catches citations with no textual link, such as an answer written from a document's title and the model's own knowledge, not a mix-up between two passages on the same topic; a stricter rule cut correct citations on the eval's answers.
+- **Unreadable text is refused, not searched.** A PDF set in a pre-Unicode font extracts as mojibake ("ÃÔÊ Å‖¡—SfIM§¬…"). Indexed, it produced garbage source cards, and a model given those passages answered from the title instead. A word-statistics check at ingest (the share of words that look like words of some writing system, with no model) refuses such a document with a clear message; it was calibrated on every chunk of the sample papers, real text in 20 languages, Markdown and code, and generated mojibake: none of the real text was refused, and every corrupted document was. Passages are checked again before the model sees them, so an older index can't leak one in. Text in another language is kept and flagged, since search isn't tuned for it.
 - **Testable by design.** The LLM, embeddings, vector store and reranker are injectable, so the test suite runs the real agent graph, API and UI backends without API keys or model downloads.
 
 ## Project structure
@@ -243,7 +246,9 @@ ruff check . && ruff format --check .
 
 ## Limitations and next steps
 
-- Scanned PDFs need OCR first (text extraction only).
+- English only: the embedding model (bge-small-en) and the keyword tokenizer are English. Documents in other languages are indexed with a warning, and answers about them are less reliable.
+- Next: multilingual support (multilingual embeddings, Unicode-aware keyword search, answers in the question's language).
+- Scanned PDFs need OCR first (text extraction only), and PDFs in pre-Unicode fonts are refused (their text layer can't be read).
 - Conversation memory is the last three exchanges of one browser session; the agent doesn't summarise older turns.
 - One shared index; a multi-user deployment would need per-user collections and auth.
 - Answer-quality numbers depend on the LLM judge; spot-check the per-question JSON before quoting them.

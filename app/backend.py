@@ -44,7 +44,7 @@ class LocalBackend:
 
     def ingest_files(self, files: list[tuple[str, bytes]]) -> dict:
         from researchpilot.config import get_settings
-        from researchpilot.ingestion.loaders import Document, load_pdf_bytes
+        from researchpilot.ingestion.loaders import Document, decode_text, load_pdf_bytes
         from researchpilot.ingestion.pipeline import ingest_document
 
         limit = get_settings().max_upload_mb * 1024 * 1024
@@ -56,7 +56,7 @@ class LocalBackend:
                 if name.lower().endswith(".pdf"):
                     doc = load_pdf_bytes(data, name)
                 else:
-                    doc = Document(source=name, title=Path(name).stem, pages=[(None, data.decode("utf-8", "replace"))])
+                    doc = Document(source=name, title=Path(name).stem, pages=[(None, decode_text(data))])
                 report["ingested"].append(ingest_document(doc, refresh=False))
             except Exception as exc:
                 report["failed"].append({"source": name, "error": str(exc)})
@@ -96,6 +96,14 @@ class LocalBackend:
 
     def add_session_file(self, owner: str, name: str, data: bytes) -> dict:
         return self._sessions().add_file(owner, name, data)
+
+    def prepare_session_files(self, owner: str, files: list[tuple[str, bytes]]) -> list:
+        """Check and read files without embedding them: a PreparedFile or a SessionUploadError per file."""
+        return self._sessions().prepare_files(owner, files)
+
+    def index_session_file(self, owner: str, prepared) -> dict:
+        """Embed a prepared file into the session's private index (the slow part)."""
+        return self._sessions().index(owner, prepared)
 
     def remove_session_file(self, owner: str, source: str) -> bool:
         return self._sessions().remove(owner, source)

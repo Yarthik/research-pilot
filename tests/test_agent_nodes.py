@@ -160,9 +160,11 @@ def test_generate_builds_citations_from_the_text(fake_llm):
 
 def test_generate_normalizes_lenticular_citations(fake_llm):
     # gpt-oss writes 【n†Lx-Ly】 instead of [n]; the answer shown to users must use [n].
-    fake_llm.responses["Answer"] = [Answer(answer="Rank decomposition【1†L1-L4】【2†L3】.", cited_sources=[1])]
+    fake_llm.responses["Answer"] = [
+        Answer(answer="Rank decomposition cuts memory【1†L1-L4】【2†L3】.", cited_sources=[1])
+    ]
     out = nodes.generate({"question": "q", "evidence": EVIDENCE})
-    assert out["answer"] == "Rank decomposition[1][2]."
+    assert out["answer"] == "Rank decomposition cuts memory[1][2]."
     assert [c["n"] for c in out["citations"]] == [1, 2]
 
 

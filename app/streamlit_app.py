@@ -13,6 +13,7 @@ import logging
 import os
 import sys
 import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -26,9 +27,11 @@ import ui  # noqa: E402
 from backend import get_backend  # noqa: E402
 from render import (  # noqa: E402
     GITHUB_URL,
+    NOT_ENGLISH,
     answer_html,
     describe_step,
     how_it_works,
+    indexing_activity,
     kept_note,
     model_label,
     next_activity,
@@ -142,22 +145,43 @@ def how_it_works_text(mode: str) -> str:
     return text
 
 
-def attach_files(files) -> tuple[list[dict], list[str]]:
-    """Add files from the composer to this session's private index. Returns (added files, error messages).
+def couldnt_add(name: str) -> str:
+    return f"{name} couldn't be added. Please try again, or try another file."
 
-    A file over the page or text limit is added with only its first part, and a notice says so.
+
+def prepare_files(files) -> tuple[list, list[str]]:
+    """Check and read files from the composer, without embedding them. Returns (prepared files, error messages).
+
+    Fast, so a file that can't be added (too big, no text, unreadable text, one too many) holds its question
+    back before anything is sent. A file over the page or text limit is kept in part, and a notice says so.
     """
+    with st.spinner("Reading your file…" if len(files) == 1 else "Reading your files…"):
+        try:
+            results = backend().prepare_session_files(owner, [(upload.name, upload.getvalue()) for upload in files])
+        except Exception:  # unexpected: keep the page working; the details go to the log
+            log.exception("reading %s failed", [upload.name for upload in files])
+            results = [SessionUploadError(couldnt_add(upload.name)) for upload in files]
+    prepared = [r for r in results if not isinstance(r, Exception)]
+    return prepared, [str(r) for r in results if isinstance(r, Exception)]
+
+
+def note_kept(docs: list[dict]) -> None:
+    """Say, by the composer, how much of a long file was indexed (once it has been)."""
+    st.session_state.attach_notes = [note for note in map(kept_note, docs) if note]
+
+
+def index_files(prepared: list) -> tuple[list[dict], list[str]]:
+    """Embed prepared files into this session's index now. Returns (added files, error messages)."""
     added, errors = [], []
-    with st.spinner("Reading and indexing your file…"):
-        for upload in files:
+    with st.spinner("Indexing your file…" if len(prepared) == 1 else "Indexing your files…"):
+        for item in prepared:
             try:
-                added.append(backend().add_session_file(owner, upload.name, upload.getvalue()))
-            except SessionUploadError as exc:  # too big, no text, unreadable, too many files, at capacity
+                added.append(backend().index_session_file(owner, item))
+            except SessionUploadError as exc:  # e.g. private uploads filled up meanwhile
                 errors.append(str(exc))
-            except Exception:  # unexpected: keep the page working; the details go to the log
-                log.exception("adding %r failed", upload.name)
-                errors.append(f"{upload.name} couldn't be added. Please try again, or try another file.")
-    st.session_state.attach_notes = [note for note in map(kept_note, added) if note]
+            except Exception:
+                log.exception("indexing %r failed", item.name)
+                errors.append(couldnt_add(item.name))
     return added, errors
 
 
@@ -190,7 +214,8 @@ def clear_notices() -> None:
 # --------------------------------------------------------------------------- shared library (ALLOW_INGEST=true)
 def show_report(status, report: dict) -> None:
     for item in report["ingested"]:
-        status.write(f":material/check: {display_title(item['title'])} ({plural(item['chunks'], 'passage')})")
+        note = "" if item.get("english", True) else f" · {NOT_ENGLISH}"
+        status.write(f":material/check: {display_title(item['title'])} ({plural(item['chunks'], 'passage')}){note}")
     for item in report["failed"]:
         status.write(f":material/close: {item['source']}: {item['error']}")
     status.update(label=f"Added {len(report['ingested'])}, failed {len(report['failed'])}", state="complete")
@@ -456,24 +481,44 @@ else:
 question = question or clicked_example
 if question or files:
     clear_notices()
+
+
+def mark_fresh(sources: list[str]) -> None:
+    """Files attached since the last question are "new": a question that refers to them searches only them."""
+    st.session_state.fresh = [s for s in st.session_state.get("fresh", []) if s not in sources] + sources
+
+
+def hold_back(errors: list[str], question: str | None) -> None:
+    """Don't answer without the file the visitor meant to ask about: show why, and put the question back."""
+    st.session_state.upload_errors = ["  \n".join(errors) + (f"  \n{NOT_SENT}" if question else "")]
+    if question:
+        st.session_state.restore_text = question
+
+
+prepared: list = []
 if files:
-    added, errors = attach_files(files)
-    # Files attached since the last question are "new": a question that refers to them searches only them.
-    fresh = [s for s in st.session_state.get("fresh", []) if s not in {d["source"] for d in added}]
-    st.session_state.fresh = fresh + [d["source"] for d in added]
-    if errors:  # don't answer without the file the visitor meant to ask about
-        st.session_state.upload_errors = ["  \n".join(errors) + (f"  \n{NOT_SENT}" if question else "")]
-        if question:
-            st.session_state.restore_text = question
-        st.rerun()
-    if not question:
-        st.rerun()  # show the new chips
+    prepared, errors = prepare_files(files)
+    if errors or not question:
+        # Attached on their own, or with a file that failed: the files that are fine are added now.
+        added, failed = index_files(prepared)
+        note_kept(added)
+        mark_fresh([d["source"] for d in added])
+        if errors or failed:
+            hold_back(errors + failed, question)
+        st.rerun()  # show the new chips (and any error)
+    # Sent with a question: embedded in the answer's live status, as a step with its own time.
 if question and not limit_reached:
     # Show the question and a live status at once in the chat layout, then answer on that run.
-    fresh = set(st.session_state.pop("fresh", []))
+    fresh = set(st.session_state.pop("fresh", [])) | {item.name for item in prepared}
     current = backend().session_documents(owner) if session_uploads else []
+    current += [item.info for item in prepared if item.name not in {d["source"] for d in current}]
     attachments = [{"source": d["source"], "title": d["title"]} for d in current if d["source"] in fresh]
-    st.session_state.pending = {"question": question, "history": chat_history(), "attachments": attachments}
+    st.session_state.pending = {
+        "question": question,
+        "history": chat_history(),
+        "attachments": attachments,
+        "files": prepared,
+    }
     st.session_state.questions_asked += 1
     user_message = {"role": "user", "content": question}
     if attachments:
@@ -484,26 +529,66 @@ if question and not limit_reached:
 pending = st.session_state.pop("pending", None)
 if isinstance(pending, str):  # queued by an older version of this page (a session kept across a reload)
     pending = {"question": pending}
+
+
+def index_live(files: list, done, doing) -> tuple[list[dict], dict]:
+    """Embed the files sent with a question, each as a live step. Returns (their trace steps, the indexing time)."""
+    steps, start = [], time.perf_counter()
+    for number, item in enumerate(files, start=1):
+        doing.markdown(f":material/hourglass_top: {indexing_activity(item.info, number, len(files))}")
+        began = time.perf_counter()
+        backend().index_session_file(owner, item)
+        pdf = item.name.lower().endswith(".pdf")
+        step = {
+            "step": "index",
+            "title": item.info["title"],
+            "pages": item.info["pages"] if pdf else None,
+            "seconds": round(time.perf_counter() - began, 2),
+        }
+        steps.append(step)
+        done.markdown(f"{ui.STEP_ICONS['index']} {describe_step(step)}")
+    return steps, {"seconds": round(time.perf_counter() - start, 2), "files": len(files)}
+
+
 if pending:
+    files = pending.get("files") or []
     with st.chat_message("assistant", avatar=ICON):
-        result, notice, failure = None, None, None
+        result, notice, failure, held_back = None, None, None, None
         progress = st.empty()  # the live steps; replaced by the finished answer (with its collapsed steps)
+        label = ("Reading your file…" if len(files) == 1 else "Reading your files…") if files else None
         with (
             progress.container(),
             st.container(key="rp-steps-live"),
-            st.status("Searching the documents…", expanded=True) as status,
+            st.status(label or "Searching the documents…", expanded=True) as status,
         ):
             done = st.container()  # finished steps, in order
             doing = st.empty()  # what the agent is doing now; replaced when each step finishes
             first = "Reading it with the earlier messages…" if pending.get("history") else "Planning the searches…"
             doing.markdown(f":material/hourglass_top: {first}")  # shown at once
+            index_steps, indexing = [], None
+            if files:  # the slow part of attaching: shown and timed on its own, not as part of the answer
+                try:
+                    index_steps, indexing = index_live(files, done, doing)
+                except SessionUploadError as exc:  # e.g. private uploads filled up meanwhile
+                    held_back = str(exc)
+                except Exception:
+                    log.exception("indexing %s failed", [item.name for item in files])
+                    held_back = couldnt_add(", ".join(item.name for item in files))
+                if not held_back:
+                    note_kept([item.info for item in files])  # shown with the answer
+                    status.update(label="Searching the documents…")
+                    doing.markdown(f":material/hourglass_top: {first}")
             try:
-                for event in backend().ask_stream(
-                    pending["question"],
-                    mode=mode,
-                    owner=owner if session_uploads else None,
-                    history=pending.get("history"),
-                    attachments=pending.get("attachments"),
+                for event in (
+                    []
+                    if held_back
+                    else backend().ask_stream(
+                        pending["question"],
+                        mode=mode,
+                        owner=owner if session_uploads else None,
+                        history=pending.get("history"),
+                        attachments=pending.get("attachments"),
+                    )
                 ):
                     if event["type"] == "step":
                         done.markdown(f"{ui.STEP_ICONS.get(event['step'], '•')} {describe_step(event)}")
@@ -513,7 +598,9 @@ if pending:
                         else:
                             doing.empty()
                     elif event["type"] == "result":
-                        result = event
+                        result = dict(event, trace=index_steps + event.get("trace", []))
+                        if indexing:
+                            result["indexing"] = indexing  # kept out of the answer's own time
             except LLMRateLimitError as exc:  # the provider's quota is used up: friendly message, not the error
                 notice = rate_limit_notice(exc.daily)
             except LLMConfigError as exc:  # for whoever runs the app, so it names the settings
@@ -527,6 +614,12 @@ if pending:
             else:
                 stopped = "The LLM's free-tier limit was reached" if notice else "Stopped"
                 status.update(label=stopped, state="error", expanded=False)
+        if held_back:  # the file couldn't be indexed: the question goes back to the message box, uncounted
+            messages.pop()
+            st.session_state.questions_asked -= 1
+            mark_fresh([a["source"] for a in pending.get("attachments") or []])  # any that did index stay new
+            hold_back([held_back], pending["question"])
+            st.rerun()
         if result:
             progress.empty()
             render_result(result, prefix=f"m{len(messages)}")

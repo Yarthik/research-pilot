@@ -14,12 +14,14 @@ from itertools import zip_longest
 from .. import llm as llm_module
 from ..config import get_settings
 from ..ingestion.chunking import Chunk
+from ..ingestion.quality import readable_passage
 from ..llm import FATAL_LLM_ERRORS
 from ..retrieval import hybrid
 from ..tools.web_search import web_search, web_search_available
 from .citations import normalize_citations, parse_citations, split_valid
 from .conversation import format_attachments, format_history, is_vague, library_answer, refers_to_context
 from .evidence import select_evidence
+from .grounding import check_citations, check_listed
 from .prompts import ANSWER_PROMPT, CONDENSE_PROMPT, GRADE_PROMPT, PLAN_PROMPT
 from .schemas import GRADE_VERDICTS, Answer, ContextGrade, ResearchPlan, StandaloneQuestion
 from .state import ResearchState, Source
@@ -29,6 +31,14 @@ log = logging.getLogger(__name__)
 NO_EVIDENCE_ANSWER = (
     "I couldn't find anything relevant in the ingested documents. "
     "Try ingesting more sources or rephrasing the question."
+)
+UNREADABLE_ANSWER = (
+    "I can't answer this from the documents: the passages that matched in {titles} can't be read. Their "
+    "text is garbled, which happens when a PDF stores its text in a non-standard font encoding or as images."
+)
+UNSUPPORTED_ANSWER = (
+    "I can't answer this from the documents: the passages I found don't state it, so any answer would go "
+    "beyond what they say."
 )
 
 
@@ -217,9 +227,13 @@ def retrieve(state: ResearchState) -> dict:
         per_query.append(results)
     # Interleave by rank (each sub-query's best hit first): when there is no scorer and the pool is
     # trimmed, the lowest-ranked hits of every sub-query go, rather than whole sub-queries.
+    unreadable: list[str] = []  # titles of passages dropped because their text is mojibake
     for item in (item for group in zip_longest(*per_query) for item in group if item is not None):
         if item["id"] not in seen:
             seen.add(item["id"])
+            if not readable_passage(item["text"]):
+                unreadable.append(item["title"])
+                continue
             new.append(item)
             added_web += item.get("origin") == "web"
 
@@ -244,7 +258,11 @@ def retrieve(state: ResearchState) -> dict:
         step["scope"] = scoped
     elif state.get("scope"):  # the files were removed (or cleaned up) after they were attached
         step["scope_missing"] = True
-    return {"evidence": evidence, "round": round_number, "trace": [step]}
+    update: dict = {"evidence": evidence, "round": round_number, "trace": [step]}
+    if unreadable:
+        step["unreadable"] = len(unreadable)
+        update["unreadable"] = list(dict.fromkeys((state.get("unreadable") or []) + unreadable))
+    return update
 
 
 # --------------------------------------------------------------------------- grade
@@ -330,12 +348,17 @@ def generate(state: ResearchState) -> dict:
     start = time.perf_counter()
     evidence = state.get("evidence") or []
     if not evidence:
+        unreadable = state.get("unreadable") or []
+        titles = ", ".join(f'"{title}"' for title in unreadable[:3])
+        step = {"step": "generate", "sources": 0, "cited": [], "seconds": _elapsed(start)}
+        if unreadable:
+            step["unreadable"] = True
         return {
-            "answer": NO_EVIDENCE_ANSWER,
+            "answer": UNREADABLE_ANSWER.format(titles=titles) if unreadable else NO_EVIDENCE_ANSWER,
             "citations": [],
             "invalid_citations": [],
             "insufficient": True,
-            "trace": [{"step": "generate", "sources": 0, "cited": [], "seconds": _elapsed(start)}],
+            "trace": [step],
         }
 
     prompt = ANSWER_PROMPT.format(question=_question(state), context=format_context(evidence))
@@ -361,12 +384,29 @@ def generate(state: ResearchState) -> dict:
 
     # Trust the markers actually written in the text over the model's self-reported list.
     answer = normalize_citations(answer)
-    numbers = parse_citations(answer) or list(dict.fromkeys(listed))
+    # Keep only what the cited passages can support (see grounding.py). An answer whose every cited
+    # sentence fails the check had nothing behind it: it becomes an abstention.
+    checked = check_citations(answer, evidence)
+    unsupported = bool(parse_citations(answer)) and not parse_citations(checked.answer)
+    if unsupported:
+        answer, listed, insufficient = UNSUPPORTED_ANSWER, [], True
+    else:
+        answer = checked.answer
+    if parse_citations(answer) or checked.removed:
+        numbers = parse_citations(answer)
+    else:  # no inline markers: the model's own list, minus passages that share nothing with the answer
+        listed = list(dict.fromkeys(listed))
+        numbers = check_listed(answer, evidence, listed) + [n for n in listed if not 1 <= n <= len(evidence)]
     valid, invalid = split_valid(numbers, len(evidence))
     citations = [{"n": n, **evidence[n - 1]} for n in valid]
     step = {"step": "generate", "sources": len(evidence), "cited": valid, "seconds": _elapsed(start)}
     if invalid:
         step["invalid_citations"] = invalid
+    if checked.removed:
+        step["unsupported"] = checked.removed
+        step["dropped_sentences"] = len(checked.dropped)
+    if unsupported:
+        step["abstained_unsupported"] = True
     if error:
         step["error"] = error
     return {

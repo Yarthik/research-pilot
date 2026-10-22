@@ -125,14 +125,37 @@ def model_label(provider: str, model: str) -> str:
     return f"{(model or '').rsplit('/', 1)[-1]} via {PROVIDER_NAMES.get(provider, provider)}"
 
 
+NBSP = "\u00a0"
+
+
+def _secs(seconds) -> str:
+    """11.01 -> "11", 4.42 -> "4.4"."""
+    return f"{round(float(seconds or 0), 1):g}"
+
+
 def steps_summary(result: dict) -> str:
-    """The collapsed agent-steps line, e.g. "Searched 1 round · 5 passages · 4.4 s"."""
+    """The collapsed agent-steps line, e.g. "Searched 1 round · 5 passages · 4.4 s".
+
+    Indexing a file sent with the question is timed on its own, and the answer's time excludes it:
+    "Indexed your file in 31 s · searched 2 rounds · 7.9 s".
+    """
     rounds = result.get("round") or 0
     passages = result.get("evidence_count", 0)
-    seconds = f"{round(float(result.get('seconds') or 0), 1):g}"  # 11.01 -> "11", 4.42 -> "4.4"
+    seconds = _secs(result.get("seconds"))
     if result.get("clarification"):  # answered with the list of documents, without searching
-        return f"No search needed · {seconds} s"
-    return f"Searched {plural(rounds, 'round')} · {plural(passages, 'passage')} · {seconds} s"
+        return "No search needed"
+    indexing = result.get("indexing")
+    if indexing:
+        files = "your file" if indexing.get("files", 1) == 1 else "your files"
+        parts = [
+            f"Indexed {files} in {_secs(indexing['seconds'])} s",
+            f"searched {plural(rounds, 'round')}",
+            f"{seconds} s",
+        ]
+    else:
+        parts = [f"Searched {plural(rounds, 'round')}", plural(passages, "passage"), f"{seconds} s"]
+    # Each part keeps its words together, so a narrow screen wraps the line only between parts.
+    return " · ".join(part.replace(" ", NBSP) for part in parts)
 
 
 def questions_left(left: int) -> str:
@@ -160,6 +183,8 @@ searching again can't help. Then it answers, citing the passages it used, or say
 extra model call, skipped for a first question). If a question doesn't say which document it means, it lists \
 them and asks.
 
+**English only, for now**: search is tuned for English, so answers about documents in other languages are less reliable.
+
 **Search methods** (choose one in the sidebar):
 
 {modes}
@@ -177,6 +202,20 @@ def _names(titles: list[str]) -> str:
 
 def _that(titles: list[str]) -> str:
     return "that file" if len(titles) == 1 else "those files"
+
+
+NOT_ENGLISH = "ResearchPilot is tuned for English; answers about this document may be less reliable."
+
+
+def language_note(docs: list[dict]) -> str | None:
+    """The notice beside the file chips when an attached file isn't English (None if all are)."""
+    other = [d for d in docs if d.get("english") is False]
+    if not other:
+        return None
+    if len(docs) == 1:
+        return NOT_ENGLISH
+    names = " and ".join(short_name(d["title"]) for d in other)
+    return f"{names}: {NOT_ENGLISH.replace('this document', 'it' if len(other) == 1 else 'them')}"
 
 
 def kept_note(doc: dict) -> str | None:
@@ -198,10 +237,22 @@ def file_chip_label(doc: dict) -> str:
     return f"{name} · first {kept['kept'] // 1000}k characters"
 
 
+def indexing_activity(doc: dict, number: int = 1, count: int = 1) -> str:
+    """The live line while a file sent with a question is embedded: "Indexing your file: 50 pages…"."""
+    which = "your file" if count == 1 else f"{short_name(doc['title'])} ({number} of {count})"
+    if doc.get("pages") and doc["source"].lower().endswith(".pdf"):
+        return f"Indexing {which}: {plural(doc['pages'], 'page')}…"
+    return f"Indexing {which}…"
+
+
 def describe_step(event: dict) -> str:
     """One plain-English line for an agent step (a streamed step event or a trace entry)."""
     step = event.get("step")
-    seconds = f" ({event.get('seconds', 0)} s)"
+    # The time a step took; none for an instant one, where "(0 s)" would be noise.
+    seconds = f" ({_secs(event['seconds'])} s)" if round(float(event.get("seconds") or 0), 1) else ""
+    if step == "index":
+        pages = f": {plural(event['pages'], 'page')}" if event.get("pages") else ""
+        return f"Indexed your file {short_name(event.get('title', ''))}{pages}{seconds}"
     if step == "condense":
         files = event.get("files")
         if files:
@@ -224,7 +275,8 @@ def describe_step(event: dict) -> str:
     if step == "retrieve":
         web = f" and {plural(event['new_web_results'], 'web result')}" if event.get("new_web_results") else ""
         found = f"{plural(event.get('new_chunks', 0), 'new passage')}{web}"
-        return f"Search round {event.get('round')}: found {found}; {event.get('evidence', 0)} in use{seconds}"
+        skipped = f", skipped {plural(event['unreadable'], 'unreadable passage')}" if event.get("unreadable") else ""
+        return f"Search round {event.get('round')}: found {found}{skipped}; {event.get('evidence', 0)} in use{seconds}"
     if step == "grade":
         if event.get("skipped"):
             return "Last search round done, so it answers with what it found"
@@ -238,8 +290,14 @@ def describe_step(event: dict) -> str:
             return f"Missing: {event.get('missing')} → searching again: {'; '.join(event['new_queries'])}{seconds}"
         return f"Something is missing: {event.get('missing')}{seconds}"
     if step == "generate":
+        if event.get("unreadable"):
+            return "The passages found can't be read (garbled text), so it doesn't answer from them"
+        if event.get("abstained_unsupported"):
+            return f"The passages don't state an answer, so it says so instead of guessing{seconds}"
         cited = len(event.get("cited", [])) or "none"
-        return f"Wrote the answer from {plural(event.get('sources', 0), 'passage')}, citing {cited}{seconds}"
+        removed = event.get("unsupported") or []
+        cut = f"; removed {plural(len(removed), 'citation')} the passages don't support" if removed else ""
+        return f"Wrote the answer from {plural(event.get('sources', 0), 'passage')}, citing {cited}{cut}{seconds}"
     return str(event)
 
 

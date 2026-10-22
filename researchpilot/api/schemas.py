@@ -70,6 +70,7 @@ class IngestedItem(BaseModel):
     title: str
     chunks: int
     pages: int
+    english: bool = Field(True, description="False if the text isn't English: answers about it may be less reliable")
 
 
 class FailedItem(BaseModel):

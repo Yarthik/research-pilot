@@ -13,7 +13,7 @@ from backend import ApiBackend, LocalBackend, get_backend  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 PLAN = {"sub_queries": ["LoRA"], "needs_web": False}
-ANSWER = {"answer": "LoRA uses rank decomposition matrices [1].", "cited_sources": [1]}
+ANSWER = {"answer": "LoRA trains a small number of parameters [1].", "cited_sources": [1]}
 
 
 @pytest.fixture(params=["local", "api"])

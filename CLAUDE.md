@@ -32,7 +32,7 @@ indexed; no URLs), see "Private uploads" below. Also fixed a cold-start race: co
 UI redesign (2026-10-12): centred 820 px reading column (layout centered), Inter (loaded by an @import in `app/styles.css`; the theme's "Inter:<url>" form is ignored in [theme.light]/[theme.dark]), smaller heading scale, compact hero, 2x2 suggestion cards, citation chips that jump to source cards (snippet from the best-matching sentence, "Open PDF at page N" for arXiv, full passage in an expander), one neutral style for every alert, a first-start setup panel with progress, a questions-left meter, and hidden Streamlit chrome. All styling is in `app/styles.css` (read on every run), the helpers that depend on it in `app/ui.py`, the pure pieces in `app/render.py` (unit-tested). Muted colours are color-mix() of the text colour so one rule works in both themes; a Playwright contrast audit found every styled text at 4.76:1 or more. Don't hide `stToolbar`: it holds the phone's open-sidebar button.
 UI v3 (2026-10-17, branch `ui-v3`; approved and merged to main on 2026-10-19 as 51ce8fa, branch kept): subtraction pass. Tokens at the top of `app/styles.css` (spacing 4-48, type 12/13/15/28, radius 8/12, colours as color-mix of the text colour on :root so dialogs, which render outside .stApp, get them). Empty state is one vertically centred group (the column's inner block has flex: 1, so it gets justify-content: center too); a submitted question is queued in `session_state.pending` and the page reruns, so the chat layout and live `st.status` appear at once. Private uploads go through `st.chat_input(accept_file="multiple")` into the same session registry (chips by the composer remove them; `st.bottom` holds the chips and the questions-left line when pinned). Steps are one `st.status` collapsing to `render.steps_summary`; sources are a two-column grid of `st.button` cards (label laid out by CSS grid: number, title, page, 2-line snippet) opening `ui.source_dialog`; chips target an anchor before each card. "How it works" is an `st.dialog`; the sidebar is brand, New chat (always present), Search method, Library, Your documents (only when attached), footer; admin controls (ALLOW_INGEST=true) sit in a *Manage library* expander. `render.fix_small_caps` rejoins "A PPLYING"-style splits in displayed passages only. Gotchas: Streamlit gives Markdown containers margin-bottom -16px (cancel it where paragraphs have no margin); Markdown icons are `span[role="img"]`; innerText applies text-transform ("YOUR DOCUMENTS"). Playwright contrast audit: every styled text 4.91:1 or more in both themes.
 UI v3 polish (2026-10-19, same branch): one placeholder "Ask a question…" ("Demo limit reached" when disabled, with a dashed composer); source cards sorted by citation number; the live status keeps finished steps plus one "now doing" line (`render.next_activity`); short display names (`render.short_name`: text before the first colon, else word-boundary cut at 30 chars; full title on hover and in the dialog); library arrows share one right edge; footer model on its own line; tooltips capped at `--rp-tooltip-width`; the How-it-works baseline fix is a shared line-height (Streamlit buttons set 1.6). Unexpected answer failures now show a friendly message kept in the history (details only in the log) and refund the question. A screenshot harness that runs the real app with the tests' FakeLLM (scenarios short/long/slow/uncovered/error/ratelimit/setup) lives in Claude's scratchpad, not the repo.
-Chat context (2026-10-19, branch `chat-context`, not merged; awaiting the owner's review):
+Chat context (2026-10-19, branch `chat-context`, not merged):
 - Long or failed attachments. A PDF is read only up to its first 50 pages (`load_pdf_bytes(max_pages=...)`,
   `Document.total_pages`) and any file is cut at 400k characters on a word boundary, instead of being rejected;
   `add_file` returns `kept` ({unit, kept, total}) and the chip (`render.file_chip_label`) and a notice
@@ -75,10 +75,7 @@ Chat context (2026-10-19, branch `chat-context`, not merged; awaiting the owner'
   "AC T TRAJECTORY" -> "ACT TRAJECTORY") only if the joined word appears elsewhere in the text or the title;
   words pypdf glued to maths symbols ("betweenW") don't count, and "W AND" is no longer glued into "WAND".
   Checked against every chunk of the sample corpus: 6 changes, all correct.
-- Phone header: at <= 820 px or on a touch screen, the header shrinks to a solid chip around the » (page
-  background passed down with `background-color: inherit` from `.stApp`, since Streamlit has no variable for
-  it; hairline border, radius 8, 44 px button, `env(safe-area-inset-*)`). Only while the toggle exists. Desktop
-  screenshots at 1440 px are unchanged (media query false at 821-1440 px with a mouse).
+- Phone header: replaced in the review pass below (the "solid chip" styled the whole header strip).
 - Measured (answer eval subset, 10 questions: u1-u4, re3, l5, c2, r3, c3, m1; hybrid, 2 rounds; gpt-oss-120b,
   judge qwen3.8-27b; 84 Groq calls). Before -> after: unanswerable questions that retried 4/4 -> 0/4 (all
   `out_of_scope`); abstention accuracy 4/4 -> 4/4; false abstentions 1/6 -> 1/6 (l5, a retrieval miss);
@@ -88,7 +85,67 @@ Chat context (2026-10-19, branch `chat-context`, not merged; awaiting the owner'
   10.7 s -> 4.5 s (noisy). Subset numbers are not in the README tables. Retrieval eval: identical in all four
   modes, per question.
 
-**Tests:** 304 collected = 303 fast (`-m "not slow"`) + 1 slow; ruff clean (on chat-context). Update when it changes.
+Review pass (2026-10-23, same branch `chat-context`, not merged; awaiting the owner's review):
+- Phone sidebar button (A). The old "solid chip" styled Streamlit's whole header, a container whose contents
+  vary by host, so it could show as a wide bordered box over the page (not reproducible locally in Chromium,
+  WebKit or Firefox; the fix removes the dependency). Now only `stExpandSidebarButton` is styled (<= 820 px
+  or a coarse pointer): a fixed 40 px circle (44 px tap target via ::after), frosted = the page colour at 80%
+  (`light-dark(#ffffff, #0e1117)`, Canvas fallback; `.stApp` sets color-scheme) + `backdrop-filter:
+  blur(12px)`, a hairline at 14% of the text colour, a 3 px shadow. The header stays transparent with
+  `pointer-events: none`. Page content starts below the button (`--rp-top`: 56 px + safe area on phones, 48
+  elsewhere). Hidden while a dialog is open (`:root:has([data-testid="stDialog"])`), since the header sits
+  above dialog scrims. No JavaScript. Desktop (fine pointer, > 820 px) is pixel-identical.
+- English only, stated honestly (B). `ingestion/quality.py`: word statistics, no model. "clean" = share of
+  words that look like words of some writing system (no symbols inside; a Latin word has natural casing and a
+  vowel; no combining mark first; no mixed alphabets, CJK excepted). PDF text is NFKC-normalised, which turns
+  legacy-font soup into letters (µ -> Greek μ), hence the script rules. Document threshold 0.75 (sample papers
+  >= 0.96, real text in 20 languages >= 0.97 after NFKC, Markdown/code >= 0.88, corrupted layers <= 0.67);
+  passage threshold 0.5 (a hyperparameter table scores 0.60). English = Latin letters >= 70% and English
+  function words >= 5% (a resume 0.13, other Latin-script languages <= 0.015). Unreadable -> refused at ingest
+  (session uploads: "X's text can't be read: the PDF stores its text in a non-standard font encoding or as
+  images.", through the existing hold-back flow; shared ingest: a failed item). Not English -> indexed,
+  `english: False` in the file info, a notice under the chips (`render.language_note`, `NOT_ENGLISH`), the
+  admin report and the CLI. TXT/MD decode as UTF-8, UTF-16 (BOM) or cp1252 (`loaders.decode_text`).
+  Calibration data (Wikipedia text in 20 languages, synthetic mojibake) stays in the scratchpad;
+  `tests/test_quality.py` uses UDHR excerpts (de, es, hi, zh).
+- Grounding (C). The answer prompt rules out titles/file names and outside knowledge and says to ignore garbled
+  passages. `retrieve` drops unreadable passages (`readable_passage`; trace `unreadable`); with none left,
+  `generate` answers `UNREADABLE_ANSWER` without a model call. `agent/grounding.py` checks each cited
+  sentence: a marker whose passage shares < 2 content words with the sentence (1 if the sentence has only one
+  or cites several passages; 5-letter stems; reporting words like "the guide describes" ignored) is removed,
+  a sentence with no supported marker is dropped, and an answer with nothing cited left becomes
+  `UNSUPPORTED_ANSWER`. Garbled passages support nothing; other-language passages aren't word-checked. A
+  model's `cited_sources` without inline markers is checked against the whole answer (`check_listed`).
+  Measured: 0 real citations removed on both subset runs; 101/111 citations re-pointed at a garbled copy of
+  their passage caught. It does not catch a mix-up between two passages on the same topic (true citations
+  share 30-85% of their words, wrong ones up to 47%).
+- Eval subset (same 10 questions, hybrid, 2 rounds, gpt-oss-120b, judge qwen3.8-27b; ~80 Groq calls), before
+  (2026-10-19) -> after (2026-10-22): correctness 0.83 -> 0.83 (5/6, the same questions), abstention accuracy
+  4/4 -> 4/4, false abstentions 1/6 -> 1/6 (l5), faithfulness 1.0 -> 1.0, invalid citations 0 -> 0, retried
+  3/10 -> 3/10; per question identical apart from c3 citing 4 passages instead of 3. The check removed nothing
+  in that run; the changes made after it (listed-citation check, relaxed rules) were re-checked offline on its
+  answers and change none. Retrieval eval: identical per question in all four modes.
+- Timing (D). Attachments sent with a question are read and checked first (`SessionRegistry.prepare_files`,
+  fast, so a refused file holds the question back before anything is shown), then embedded in the answer's
+  live status as an `index` step ("Indexing your file: 50 pages…" under "Reading your file…"), timed on its
+  own: `result["indexing"]`, summary "Indexed your file in 31 s · searched 2 rounds · 7.9 s" (each part
+  non-breaking, so it wraps only at a ·). The kept-pages notice appears once indexing is done. If embedding
+  fails there, the question goes back to the box uncounted. Instant steps show no "(0 s)"; step times are
+  rounded like the summary.
+- Hover (E). Every hover effect is inside `@media (hover: hover)`; each styled element also has a :hover rule
+  for every device that keeps its resting look (Streamlit's own hover colours stuck on touch too). Probed: on
+  a touch phone nothing changes after a tap; with a mouse every hover effect still shows.
+- Docs (F). How it works has an "English only, for now" line; README: English-only note at the top, the
+  ingestion line, two design-decision bullets, Limitations (English only; next: multilingual support).
+- Also fixed: on a short screen (320 x 568, phones in landscape) the empty state's centred column overflowed
+  above the top and cut off the heading (Streamlit's `flex: 1` has a zero basis): the column and its block no
+  longer shrink below their content. Scripted test answers that cited passages without their words were made
+  consistent.
+- Verification lives in the scratchpad, not the repo: `matrix.py` (13 states x 6 viewports x 2 themes on the
+  harness; phones and tablet as touch devices), `make_sheets.py`, the review file, a contact sheet, before/after
+  sheets against the previous commit (a git worktree served on port 8605), WebKit and Firefox probes.
+
+**Tests:** 341 collected = 340 fast (`-m "not slow"`) + 1 slow; ruff clean (on chat-context). Update when it changes.
 
 **Hosting plan:** the main host is Streamlit Community Cloud (free, ~2.7 GB RAM): entry point
 `app/streamlit_app.py`, Python 3.12, settings as quoted top-level TOML secrets
@@ -113,6 +170,13 @@ stays optional, as do Docker Compose and any container host.
    README tables; the tables predate it.
 8. A file over 20 MB attached in the composer is refused by Streamlit in the browser and the question goes
    without it (no server-side signal); raising the server cap would trade memory for this edge case.
+9. Multilingual support (multilingual embeddings, Unicode-aware keyword search, answers in the question's
+   language). Until then other languages are indexed with a notice.
+10. The citation check can't tell two passages on the same topic apart; an LLM verifier (or quotes in the
+   answer schema) would, at extra cost. The passage-level unreadable filter misses some garbled passages; the
+   document-level check at ingest is what refuses them.
+11. Clicking anything while an answer is streaming reruns the page and drops that answer (Streamlit stops the
+   run), and the question stays counted. Pre-existing.
 
 ## Status
 
